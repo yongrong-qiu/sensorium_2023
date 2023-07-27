@@ -226,11 +226,12 @@ def standard_trainer(
                 optimizer.zero_grad(set_to_none=True)
 
         model.eval()
-        if save_checkpoints:
-            if epoch % chpt_save_step == 0:
-                torch.save(
-                    model.state_dict(), f"{checkpoint_save_path}epoch_{epoch}.pth"
-                )
+        #yqiu
+        #if save_checkpoints:
+        #    if epoch % chpt_save_step == 0:
+        #        torch.save(
+        #            model.state_dict(), f"{checkpoint_save_path}epoch_{epoch}.pth"
+        #        )
 
         ## after - epoch-analysis
 
@@ -270,7 +271,9 @@ def standard_trainer(
     ##### Model evaluation ####################################################################################################
     model.eval()
     if save_checkpoints:
-        torch.save(model.state_dict(), f"{checkpoint_save_path}final.pth")
+        #yqiu
+        #torch.save(model.state_dict(), f"{checkpoint_save_path}final.pth")
+        torch.save(model.state_dict(), f"{checkpoint_save_path}.pth")
 
     # Compute avg validation and test correlation
     validation_correlation = get_correlations(
@@ -286,9 +289,10 @@ def standard_trainer(
         wandb.finish()
 
     # removing the checkpoints except the last one
-    to_clean = os.listdir(checkpoint_save_path)
-    for f2c in to_clean:
-        if "epoch_" in f2c and f2c[-4:] == ".pth":
-            os.remove(f"{checkpoint_save_path}{f2c}")
+    #yqiu, comment these lines
+    #to_clean = os.listdir(checkpoint_save_path)
+    #for f2c in to_clean:
+    #    if "epoch_" in f2c and f2c[-4:] == ".pth":
+    #        os.remove(f"{checkpoint_save_path}{f2c}")
 
     return score, output, model.state_dict()
