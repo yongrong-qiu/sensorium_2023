@@ -224,7 +224,7 @@ def standard_trainer(
 
                 #                 optimizer.zero_grad(set_to_none=False)
                 optimizer.zero_grad(set_to_none=True)
-
+        
         model.eval()
         #yqiu
         #if save_checkpoints:
@@ -259,8 +259,9 @@ def standard_trainer(
         if use_wandb:
             wandb_dict = {
                 "Epoch Train loss": epoch_loss,
-                "Batch": batch_no_tot,
-                "Epoch": epoch,
+                #yqiu
+                #"Batch": batch_no_tot, 
+                #"Epoch": epoch,
                 "validation_correlation": validation_correlation,
                 "Epoch validation loss": val_loss,
                 "Epoch": epoch,

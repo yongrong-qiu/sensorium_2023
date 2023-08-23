@@ -36,7 +36,7 @@ def model_predictions(
             )
             
         with torch.no_grad():
-            resp = responses.detach().cpu()[:, :, skip:]
+            resp = responses.detach().cpu().numpy()[:, :, skip:]
             target = target + list(resp)
             with device_state(model, device):
                 out = (
@@ -47,7 +47,7 @@ def model_predictions(
                 assert (
                     out.shape[1] == resp.shape[-1]
                 ), f"model prediction is too short ({out.shape[1]} vs {resp.shape[-1]})"
-                output = output + list(out.permute(0, 2, 1))
+                output = output + list(out.permute(0, 2, 1).numpy())
 
     return target, output
 
