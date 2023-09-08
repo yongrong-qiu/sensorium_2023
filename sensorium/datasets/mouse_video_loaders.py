@@ -96,7 +96,20 @@ def mouse_video_loader(
             more_transforms.append( ChangeChannelsOrder((1, 0), in_name="behavior") )
         if include_pupil_centers:
             more_transforms.append( ChangeChannelsOrder((1, 0), in_name="pupil_center") )
-        
+
+        if include_behavior:
+            more_transforms.append(
+                AddBehaviorAsChannels(
+                    "videos"
+                )
+            )
+        if include_pupil_centers and include_pupil_centers_as_channels:
+            more_transforms.append(AddPupilCenterAsChannels("videos"))
+
+        more_transforms.append(ToTensor(cuda))
+        more_transforms.insert(
+            0, ScaleInputs(scale=scale, in_name="videos", channel_axis=-1)
+        )
         if normalize:
             try:
                 more_transforms.insert(
@@ -113,21 +126,6 @@ def mouse_video_loader(
                 more_transforms.insert(
                     0, NeuroNormalizer(dat2, exclude=exclude, in_name="videos")
                 )
-
-        if include_behavior:
-            more_transforms.append(
-                AddBehaviorAsChannels(
-                    "videos"
-                )
-            )
-        if include_pupil_centers and include_pupil_centers_as_channels:
-            more_transforms.append(AddPupilCenterAsChannels("videos"))
-
-        more_transforms.append(ToTensor(cuda))
-        more_transforms.insert(
-            0, ScaleInputs(scale=scale, in_name="videos", channel_axis=-1)
-        )
-        
 
         dat2.transforms.extend(more_transforms)
 
