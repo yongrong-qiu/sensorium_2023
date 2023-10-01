@@ -193,7 +193,7 @@ def mouse_video_loader(
                         if tier == "train"
                         else SubsetSequentialSampler(subset_idx)
                     )
-                    batch_size = 8 if tier == "train" else 1
+                    batch_size = 8 if tier == "train" else 3
                     dataloaders[tier] = DataLoader(
                         dat3,
                         sampler=sampler,
