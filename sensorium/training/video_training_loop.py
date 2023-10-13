@@ -49,6 +49,7 @@ def standard_trainer(
     checkpoint_save_path="local/",
     chpt_save_step=15,
     deeplake_ds=False,
+    validation_str = "oracle", # or "validation"
     **kwargs,
 ):
     """
@@ -123,7 +124,7 @@ def standard_trainer(
     criterion = getattr(modules, loss_function)(avg=avg_loss)
     stop_closure = partial(
         getattr(scores, stop_function),
-        dataloaders=dataloaders["oracle"],
+        dataloaders=dataloaders[validation_str],
         device=device,
         per_neuron=False,
         avg=True,
@@ -237,7 +238,7 @@ def standard_trainer(
 
         validation_correlation = get_correlations(
             model,
-            dataloaders["oracle"],
+            dataloaders[validation_str],
             device=device,
             as_dict=False,
             per_neuron=False,
@@ -245,7 +246,7 @@ def standard_trainer(
         )
         val_loss = full_objective(
             model,
-            dataloaders["oracle"],
+            dataloaders[validation_str],
             data_key,
             *batch_args,
             **batch_kwargs,
@@ -278,7 +279,7 @@ def standard_trainer(
 
     # Compute avg validation and test correlation
     validation_correlation = get_correlations(
-        model, dataloaders["oracle"], device=device, as_dict=False, per_neuron=False, deeplake_ds=deeplake_ds,
+        model, dataloaders[validation_str], device=device, as_dict=False, per_neuron=False, deeplake_ds=deeplake_ds,
     )
     print(f"\n\n FINAL validation_correlation {validation_correlation} \n\n")
 
