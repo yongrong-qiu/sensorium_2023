@@ -153,7 +153,7 @@ def mouse_video_loader(
                 dataloaders[tier] = DataLoader(
                     dat2,
                     sampler=sampler,
-                    batch_size=batch_size,
+                    batch_size=batch_size if tier == "train" else 1,
                 )
 
         dataset_name = path.split("/")[-2]
