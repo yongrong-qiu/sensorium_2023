@@ -217,10 +217,11 @@ def standard_trainer(
                 **batch_kwargs,
                 detach_core=detach_core,
             )
+            loss = loss/optim_step_count
             loss.backward()
 
             epoch_loss += loss.detach()
-            if (batch_no + 1) % optim_step_count == 0:
+            if (batch_no + 1) % optim_step_count == 0: # TODO: or (batch_no + 1 == len(LongCycler(dataloaders["train"])))
                 optimizer.step()
 
                 #                 optimizer.zero_grad(set_to_none=False)
