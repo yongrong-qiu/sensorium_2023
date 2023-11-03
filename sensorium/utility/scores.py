@@ -4,6 +4,8 @@ import numpy as np
 import torch
 from neuralpredictors.measures.np_functions import corr
 from neuralpredictors.training import device_state
+from nnfabrik.builder import get_data
+import operator
 
 
 def model_predictions(
@@ -13,12 +15,12 @@ def model_predictions(
     computes model predictions for a given dataloader and a model
     Returns:
         target: ground truth, i.e. neuronal firing rates of the neurons
-        output: responses as predicted by the network
+        output: responses as predicted by the network, a list of arrays, each array
+                corresponds to responses of one trial, array shape: (num_of_neurons, num_of_frames_per_trial)
     """
 
     target, output = [], []
     for batch in dataloader:
-
         batch_kwargs = batch._asdict() if not isinstance(batch, dict) else batch
         if deeplake_ds:
             for k in batch_kwargs.keys():
@@ -34,7 +36,7 @@ def model_predictions(
                 if not isinstance(batch, dict)
                 else (batch["videos"], batch["responses"])
             )
-            
+
         with torch.no_grad():
             resp = responses.detach().cpu().numpy()[:, :, skip:]
             target = target + list(resp)
@@ -84,7 +86,9 @@ def get_correlations(
             device=device,
             deeplake_ds=deeplake_ds,
         )
-        target = np.concatenate(target, axis=1).T
+        target = np.concatenate(
+            target, axis=1
+        ).T  # , shape: (num_of_frames_all_trials, num_of_neurons)
         output = np.concatenate(output, axis=1).T
         correlations[k] = corr(target, output, axis=0)
 
@@ -132,3 +136,160 @@ def get_poisson_loss(
                 if avg
                 else np.sum(np.hstack([v for v in poisson_loss.values()]))
             )
+
+
+def get_data_filetree_loader(
+    filename=None, dataloader=None, tier="test", stimulus_type=None
+):
+    """
+    Extracts necessary data for model evaluation from a dataloader based on the FileTree dataset.
+
+    Args:
+        filename (str): Specifies a path to the FileTree dataset.
+        dataloader (obj): PyTorch Dataloader
+        stimulus_type (str): such as "clip" and "dotsequence"
+
+    Returns:
+        tuple: Contains:
+               - tier_hashes (1D array, the length is equal to the number of trial in that tier)
+               - evaluation_hashes_unique (1D array, unique condition_hash for evaluation)
+
+    """
+
+    if dataloader is None:
+        dataset_fn = "sensorium.datasets.mouse_video_loaders.mouse_video_loader"
+        dataset_config = {
+            "paths": filename,
+            "normalize": True,
+            "tier": tier,
+            "batch_size": 1,
+            "frames": 300,
+            "to_cut": False,
+        }
+        dataloaders = get_data(dataset_fn, dataset_config)
+        data_key = list(dataloaders[tier].keys())[0]
+
+        dat = dataloaders[tier][data_key].dataset
+    else:
+        dat = dataloader.dataset
+
+    # neuron_ids = dat.neurons.unit_ids.tolist()
+    tiers = dat.trial_info.tiers
+    complete_condition_hashes = dat.trial_info.condition_hash
+    # complete_trial_idx = dat.trial_info.trial_idx
+
+    tier_hashes = complete_condition_hashes[
+        np.where(tiers == tier)[0]
+    ]  # condition_hashes for the specific tier
+    if (
+        stimulus_type != None
+    ):  # condition_hashes for the specific tier and the specific stimulus_type
+        complete_trial_ts = getattr(dat.trial_info, stimulus_type + "_trial_ts")
+        tier_stimlus_type_hashes = complete_condition_hashes[
+            np.where((tiers == tier) & (complete_trial_ts != "NaT"))[0]
+        ]
+
+    # the condition_hash that would be used for evaluation
+    evaluation_hashes_unique = (
+        np.unique(tier_stimlus_type_hashes)
+        if stimulus_type != None
+        else np.unique(tier_hashes)
+    )
+
+    return tier_hashes, evaluation_hashes_unique
+
+
+def get_signal_correlations(
+    model,
+    dataloaders,
+    tier,
+    stimulus_type=None,
+    evaluation_hashes_unique=None,
+    device="cpu",
+    as_dict=False,
+    per_neuron=True,
+):
+    """
+    Similar as `get_correlations` but first responses and predictions are averaged across repeats
+    and then the correlation is computed. In other words, the correlation is computed between
+    the means across repeats.
+    For the test loaders, we may have different stimulus_types, such as clip and dotsequence,
+    we may compute the correlations for some specific stimulus_type.
+
+    Args:
+        dataloaders (obj): PyTorch Dataloaders, without tier
+        tier (str):
+        stimulus_type (str): such as "clip" and "dotsequence"
+        evaluation_hashes_unique: 1D array, unique condition_hash for evaluation
+
+    Returns:
+        evaluation_hashes_unique
+        single_trial_corrs
+        mean_corrs
+    """
+    mean_corrs = {}
+    single_trial_corrs = {}
+    for data_key, dataloader in dataloaders[tier].items():
+        tier_hashes, evaluation_hashes_unique_temp = get_data_filetree_loader(
+            dataloader=dataloader, tier=tier, stimulus_type=stimulus_type
+        )
+        if evaluation_hashes_unique == None:
+            evaluation_hashes_unique = evaluation_hashes_unique_temp
+
+        responses, predictions = model_predictions(
+            model, dataloader, data_key=data_key, device=device
+        )
+        responses_align = [
+            operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(responses)
+            for temp in evaluation_hashes_unique
+        ]
+        predictions_align = [
+            operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(predictions)
+            for temp in evaluation_hashes_unique
+        ]
+        responses_align = [
+            np.transpose(np.array(temp), (0, 2, 1)) for temp in responses_align
+        ]
+        # responses_align: a list of array, each array corresponds to reponses to one condition_hash,
+        # array shape (num_of_repeats_for_that_hash, num_of_frames_for_that_trial, num_of_neurons)
+        predictions_align = [
+            np.transpose(np.array(temp), (0, 2, 1)) for temp in predictions_align
+        ]
+
+        # mean correlations
+        temp_responses_align = np.concatenate(
+            [np.mean(temp, axis=0) for temp in responses_align], axis=0
+        )
+        temp_predictions_align = np.concatenate(
+            [np.mean(temp, axis=0) for temp in predictions_align], axis=0
+        )
+        mean_corrs[data_key] = corr(
+            temp_responses_align, temp_predictions_align, axis=0
+        )
+        # single trial correlations
+        temp_responses_align = np.concatenate(responses_align, axis=0)
+        temp_predictions_align = np.concatenate(predictions_align, axis=0)
+        temp_responses_align = np.reshape(
+            temp_responses_align, (-1, temp_responses_align.shape[-1])
+        )
+        temp_predictions_align = np.reshape(
+            temp_predictions_align, (-1, temp_predictions_align.shape[-1])
+        )
+        single_trial_corrs[data_key] = corr(
+            temp_responses_align, temp_predictions_align, axis=0
+        )
+        del temp_responses_align, temp_predictions_align
+
+    if not as_dict:
+        mean_corrs = (
+            np.hstack([v for v in mean_corrs.values()])
+            if per_neuron
+            else np.mean(np.hstack([v for v in mean_corrs.values()]))
+        )
+        single_trial_corrs = (
+            np.hstack([v for v in single_trial_corrs.values()])
+            if per_neuron
+            else np.mean(np.hstack([v for v in single_trial_corrs.values()]))
+        )
+
+    return evaluation_hashes_unique, single_trial_corrs, mean_corrs
