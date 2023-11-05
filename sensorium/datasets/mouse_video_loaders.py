@@ -198,11 +198,10 @@ def mouse_video_loader(
                         if tier == "train"
                         else SubsetSequentialSampler(subset_idx)
                     )
-                    batch_size = batch_size if tier == "train" else 1
                     dataloaders[tier] = DataLoader(
                         dat3,
                         sampler=sampler,
-                        batch_size=batch_size,
+                        batch_size=batch_size if tier == "train" else 1,
                     )
 
         dataset_name = path.split("/")[-2]
