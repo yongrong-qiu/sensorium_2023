@@ -17,6 +17,8 @@ from neuralpredictors.data.transforms import (
 )
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
+from torch.utils.data import Dataset
+from collections import namedtuple
 
 
 def mouse_video_loader(
@@ -155,13 +157,13 @@ def mouse_video_loader(
                     dataloaders[tier] = DataLoader(
                         dat2,
                         sampler=sampler,
-                        batch_size=batch_size,
+                        batch_size=batch_size if tier == "train" else 1,
                     )
 
         else:  # perform the random sampling within each snippet
             newtiers = []  # tiers for dat3
             newinds = []  # index of dat2 for dat3
-            NumRandomSubSequence = 5  # 40
+            NumRandomSubSequence = 40  # 5, 40
             SubSequenceLength = 100
             for ii, tier in enumerate(dat2.trial_info.tiers):
                 if tier != "none":  # if tier!='none' and ii<15:
@@ -196,7 +198,7 @@ def mouse_video_loader(
                         if tier == "train"
                         else SubsetSequentialSampler(subset_idx)
                     )
-                    batch_size = 8 if tier == "train" else 1
+                    batch_size = batch_size if tier == "train" else 1
                     dataloaders[tier] = DataLoader(
                         dat3,
                         sampler=sampler,
@@ -212,11 +214,12 @@ def mouse_video_loader(
     return dataloaders_combined
 
 
-from torch.utils.data import Dataset
-from collections import namedtuple
-
-
 class NRandomSubSequence_dataset(Dataset):
+    """
+    Generate a new dataset based on dat2, by random sampling of each item of dat2 for multiples.
+    This only works for video data and each sampling is a subsequence of the long sequence in dat2.
+    """
+
     def __init__(self, dat2, newtiers, newinds, RandomSart, SubSequenceLength):
         self.dat2 = dat2
         self.newtiers = newtiers
