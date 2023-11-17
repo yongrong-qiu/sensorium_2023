@@ -39,6 +39,8 @@ def mouse_video_loader(
     to_cut=True,
     behavior_channels=[0, 1],
     random_sample_within_snippet_flag=False,
+    NumRandomSubSequence=40,  
+    SubSequenceLength=100,
 ):
     """
     Symplified version of the sensorium mouse_loaders.py
@@ -59,6 +61,16 @@ def mouse_video_loader(
             scale = 1: full iamge resolution (144 x 256)
             scale = 0.25: resolution used for model training (36 x 64)
         float64 (bool, optional):  whether to use float64 in MovieFileTreeDataset
+        behavior_channels: behavior data has a shape (number_of_channels, number_of_frames)
+            For sensorium2023, we have two channels (pupil size, locomotion), for example, the shape of behavior data could be (2,300).
+                So the default behavior_channels=[0, 1] works for sensorium2023.
+            For the nexport output, we have three channels (pupil size, pupil size change, locomotion). 
+                For now, the first two channels have the same content, i.e., pupil size. We use behavior_channels=[0,2] for training.
+        random_sample_within_snippet_flag: whether to use random sampling for each training snippet or not.
+            Default: False, so no random sampling.
+        NumRandomSubSequence: if we set random_sample_within_snippet_flag=True, this specifies the number of random subsequence
+            within each snippet.
+        SubSequenceLength: if we set random_sample_within_snippet_flag=True, this specifies the length of each subsequence.
     Returns:
         dict: dictionary of dictionaries where the first level keys are 'train', 'validation', and 'test', and second level keys are data_keys.
     """
@@ -163,8 +175,8 @@ def mouse_video_loader(
         else:  # perform the random sampling within each snippet
             newtiers = []  # tiers for dat3
             newinds = []  # index of dat2 for dat3
-            NumRandomSubSequence = 40  # 5, 40
-            SubSequenceLength = 100
+            # NumRandomSubSequence = 40  # 5, 40
+            # SubSequenceLength = 100
             for ii, tier in enumerate(dat2.trial_info.tiers):
                 if tier != "none":  # if tier!='none' and ii<15:
                     # print (ii, dat2[ii]._fields, tier)
@@ -215,8 +227,8 @@ def mouse_video_loader(
 
 class NRandomSubSequence_dataset(Dataset):
     """
-    Generate a new dataset based on dat2, by random sampling of each item of dat2 for multiples.
-    This only works for video data and each sampling is a subsequence of the long sequence in dat2.
+    Generate a new dataset based on dat2, by random sampling of each training item in dat2 for multiple times.
+    This only works for video data and each sampling is a subsequence of the full sequence in dat2.
     """
 
     def __init__(self, dat2, newtiers, newinds, RandomSart, SubSequenceLength):
