@@ -233,7 +233,7 @@ def get_signal_correlations(
         tier_hashes, evaluation_hashes_unique_temp = get_data_filetree_loader(
             dataloader=dataloader, tier=tier, stimulus_type=stimulus_type
         )
-        if evaluation_hashes_unique == None:
+        if evaluation_hashes_unique is None:
             evaluation_hashes_unique = evaluation_hashes_unique_temp
 
         responses, predictions = model_predictions(
@@ -291,5 +291,21 @@ def get_signal_correlations(
             if per_neuron
             else np.mean(np.hstack([v for v in single_trial_corrs.values()]))
         )
+    elif not per_neuron:
+        mean_corrs_ = {}
+        single_trial_corrs_ = {}
+        for k in mean_corrs.keys():
+            mean_corrs_[k] = (
+                np.hstack([v for v in mean_corrs[k]])
+                if per_neuron
+                else np.mean(np.hstack([v for v in mean_corrs[k]]))
+            )
+            single_trial_corrs_[k] = (
+                np.hstack([v for v in single_trial_corrs[k]])
+                if per_neuron
+                else np.mean(np.hstack([v for v in single_trial_corrs[k]]))
+            )
+        single_trial_corrs = single_trial_corrs_
+        mean_corrs = mean_corrs_
 
     return evaluation_hashes_unique, single_trial_corrs, mean_corrs
