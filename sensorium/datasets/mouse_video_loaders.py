@@ -24,6 +24,7 @@ from collections import namedtuple
 def mouse_video_loader(
     paths,
     batch_size,
+    neuron_ids: np.array = None,
     normalize=True,
     exclude: str = None,
     cuda: bool = False,
@@ -90,8 +91,11 @@ def mouse_video_loader(
     for path in paths:
         dat2 = MovieFileTreeDataset(path, *data_keys)
 
-        conds = np.ones(len(dat2.neurons.cell_motor_coordinates), dtype=bool)
-        idx = np.where(conds)[0]
+        if neuron_ids is None:
+            conds = np.ones(len(dat2.neurons.cell_motor_coordinates), dtype=bool)
+            idx = np.where(conds)[0]
+        else:
+            idx = np.copy(neuron_ids)
 
         more_transforms = [
             Subsample(idx, target_index=0),
