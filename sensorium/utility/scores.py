@@ -309,3 +309,61 @@ def get_signal_correlations(
         mean_corrs = mean_corrs_
 
     return evaluation_hashes_unique, single_trial_corrs, mean_corrs
+
+
+def model_predictions_align(
+    model,
+    dataloaders,
+    tier,
+    stimulus_type=None,
+    evaluation_hashes_unique=None,
+    device="cpu",
+):
+    """
+    Similar as `model_predictions` but recorded/predicted responses to repeats are arranged
+    by condition_hash, this alignment is for computing mean correlation.
+    For the test loaders, we may have different stimulus_types, such as clip and dotsequence,
+    we may compute the correlations for some specific stimulus_type.
+
+    Args:
+        dataloaders (obj): PyTorch Dataloaders, without tier
+        tier (str):
+        stimulus_type (str): such as "clip" and "dotsequence"
+        evaluation_hashes_unique: 1D array, unique condition_hash for evaluation
+
+    Returns:
+        responses_align
+        predictions_align
+    """
+    responses_aligns = {}
+    predictions_aligns = {}
+    for data_key, dataloader in dataloaders[tier].items():
+        tier_hashes, evaluation_hashes_unique_temp = get_data_filetree_loader(
+            dataloader=dataloader, tier=tier, stimulus_type=stimulus_type
+        )
+        if evaluation_hashes_unique is None:
+            evaluation_hashes_unique = evaluation_hashes_unique_temp
+
+        responses, predictions = model_predictions(
+            model, dataloader, data_key=data_key, device=device
+        )
+        responses_align = [
+            operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(responses)
+            for temp in evaluation_hashes_unique
+        ]
+        predictions_align = [
+            operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(predictions)
+            for temp in evaluation_hashes_unique
+        ]
+        responses_align = [
+            np.transpose(np.array(temp), (0, 2, 1)) for temp in responses_align
+        ]
+        # responses_align: a list of array, each array corresponds to reponses to one condition_hash,
+        # array shape (num_of_repeats_for_that_hash, num_of_frames_for_that_trial, num_of_neurons)
+        predictions_align = [
+            np.transpose(np.array(temp), (0, 2, 1)) for temp in predictions_align
+        ]
+        responses_aligns[data_key] = responses_align
+        predictions_aligns[data_key] = predictions_align
+        
+    return evaluation_hashes_unique, responses_aligns, predictions_aligns
