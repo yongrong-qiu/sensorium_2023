@@ -88,14 +88,14 @@ def mouse_video_loader(
     #     dataloaders_combined = {"validation": {}, "train": {}, "test": {}}
     dataloaders_combined = {}
 
-    for path in paths:
+    for path_id, path in enumerate(paths):
         dat2 = MovieFileTreeDataset(path, *data_keys)
 
         if neuron_ids is None:
             conds = np.ones(len(dat2.neurons.cell_motor_coordinates), dtype=bool)
             idx = np.where(conds)[0]
         else:
-            idx = np.copy(neuron_ids)
+            idx = np.copy(neuron_ids[path_id])
 
         more_transforms = [
             Subsample(idx, target_index=0),
