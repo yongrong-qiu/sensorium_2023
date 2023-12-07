@@ -40,8 +40,9 @@ def mouse_video_loader(
     to_cut=True,
     behavior_channels=[0, 1],
     random_sample_within_snippet_flag=False,
-    NumRandomSubSequence=40,  
+    NumRandomSubSequence=10,  
     SubSequenceLength=100,
+    RandomSart: np.array = None,
 ):
     """
     Symplified version of the sensorium mouse_loaders.py
@@ -72,6 +73,7 @@ def mouse_video_loader(
         NumRandomSubSequence: if we set random_sample_within_snippet_flag=True, this specifies the number of random subsequence
             within each snippet.
         SubSequenceLength: if we set random_sample_within_snippet_flag=True, this specifies the length of each subsequence.
+        RandomSart: if we set random_sample_within_snippet_flag=True, this specifies the start points of each subsequence.
     Returns:
         dict: dictionary of dictionaries where the first level keys are 'train', 'validation', and 'test', and second level keys are data_keys.
     """
@@ -193,11 +195,12 @@ def mouse_video_loader(
             # print (f'len(newtiers): {len(newtiers)}, newtiers[:50]: {newtiers[:50]}')
             # print (f'len(newinds): {len(newinds)}, newinds[:50]: {newinds[:50]}')
 
-            np.random.seed(10)
-            RandomSart = np.random.randint(
-                low=0, high=300 - SubSequenceLength, size=NumRandomSubSequence
-            )
-            # print (f'RandomSart: {RandomSart}')
+            if RandomSart is None:
+                np.random.seed(10)
+                RandomSart = np.random.randint(
+                    low=0, high=300 - SubSequenceLength, size=NumRandomSubSequence
+                )
+                # print (f'RandomSart: {RandomSart}')
 
             dat3 = NRandomSubSequence_dataset(
                 dat2, newtiers, newinds, RandomSart, SubSequenceLength
