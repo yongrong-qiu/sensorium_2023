@@ -1,5 +1,8 @@
 import numpy as np
-from neuralpredictors.data.datasets import MovieFileTreeDataset
+from neuralpredictors.data.datasets import (
+    MovieFileTreeDataset,
+    NRandomSubSequenceDataset,
+)
 from neuralpredictors.data.samplers import SubsetSequentialSampler
 from neuralpredictors.data.transforms import (
     AddBehaviorAsChannels,
@@ -17,8 +20,6 @@ from neuralpredictors.data.transforms import (
 )
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
-from torch.utils.data import Dataset
-from collections import namedtuple
 
 
 def mouse_video_loader(
@@ -29,19 +30,22 @@ def mouse_video_loader(
     exclude: str = None,
     cuda: bool = False,
     max_frame=None,
-    frames=50,
+    frames=300,
     offset=-1,
     inputs_mean=None,
     inputs_std=None,
+    subtract_response_min=False,
     include_behavior=True,
     include_pupil_centers=True,
     include_pupil_centers_as_channels=False,
     scale=1,
-    to_cut=True,
+    to_cut=False,
     behavior_channels=[0, 1],
     random_sample_within_snippet_flag=False,
-    NumRandomSubSequence=40,  
-    SubSequenceLength=100,
+    num_random_subsequence=10,
+    subsequence_length=100,
+    sequence_length=300,
+    random_start=None,
 ):
     """
     Symplified version of the sensorium mouse_loaders.py
@@ -52,6 +56,7 @@ def mouse_video_loader(
         frames (int, optional): how many frames ot take per video
         max_frame (int, optional): which is the maximal frame that could be taken per video
         offset (int, optional): Offset to start the subsequence from. Defaults to -1, corresponding to random but valid offset at each iteration.
+        subtract_response_min (bool, optional): whether to subtract response minimum (for fluorescence data). Defulats to 'False'.
         cuda (bool, optional): whether to place the data on gpu or not.
         normalize (bool, optional): whether to normalize the data (see also exclude)
         exclude (str, optional): data to exclude from data-normalization. Only relevant if normalize=True. Defaults to 'images'
@@ -65,13 +70,15 @@ def mouse_video_loader(
         behavior_channels: behavior data has a shape (number_of_channels, number_of_frames)
             For sensorium2023, we have two channels (pupil size, locomotion), for example, the shape of behavior data could be (2,300).
                 So the default behavior_channels=[0, 1] works for sensorium2023.
-            For the nexport output, we have three channels (pupil size, pupil size change, locomotion). 
+            For the nexport output, we have three channels (pupil size, pupil size change, locomotion).
                 For now, the first two channels have the same content, i.e., pupil size. We use behavior_channels=[0,2] for training.
         random_sample_within_snippet_flag: whether to use random sampling for each training snippet or not.
             Default: False, so no random sampling.
-        NumRandomSubSequence: if we set random_sample_within_snippet_flag=True, this specifies the number of random subsequence
+        num_random_subsequence: if we set random_sample_within_snippet_flag=True, this specifies the number of random subsequence
             within each snippet.
-        SubSequenceLength: if we set random_sample_within_snippet_flag=True, this specifies the length of each subsequence.
+        subsequence_length: if we set random_sample_within_snippet_flag=True, this specifies the length of each subsequence.
+        sequence_length: number of frames in each training snippet, usually it is 300 or 299.
+        random_start: if we set random_sample_within_snippet_flag=True, this specifies the start points of each subsequence.
     Returns:
         dict: dictionary of dictionaries where the first level keys are 'train', 'validation', and 'test', and second level keys are data_keys.
     """
@@ -144,12 +151,19 @@ def mouse_video_loader(
                         exclude=exclude,
                         inputs_mean=inputs_mean,
                         inputs_std=inputs_std,
+                        subtract_response_min=subtract_response_min,
                         in_name="videos",
                     ),
                 )
             except:
                 more_transforms.insert(
-                    0, NeuroNormalizer(dat2, exclude=exclude, in_name="videos")
+                    0,
+                    NeuroNormalizer(
+                        dat2,
+                        exclude=exclude,
+                        subtract_response_min=subtract_response_min,
+                        in_name="videos",
+                    ),
                 )
 
         dat2.transforms.extend(more_transforms)
@@ -177,30 +191,12 @@ def mouse_video_loader(
                     )
 
         else:  # perform the random sampling within each snippet
-            newtiers = []  # tiers for dat3
-            newinds = []  # index of dat2 for dat3
-            # NumRandomSubSequence = 40  # 5, 40
-            # SubSequenceLength = 100
-            for ii, tier in enumerate(dat2.trial_info.tiers):
-                if tier != "none":  # if tier!='none' and ii<15:
-                    # print (ii, dat2[ii]._fields, tier)
-                    if tier == "train":
-                        newtiers.extend(["train"] * NumRandomSubSequence)
-                        newinds.extend([ii] * NumRandomSubSequence)
-                    else:
-                        newtiers.append(tier)
-                        newinds.append(ii)
-            # print (f'len(newtiers): {len(newtiers)}, newtiers[:50]: {newtiers[:50]}')
-            # print (f'len(newinds): {len(newinds)}, newinds[:50]: {newinds[:50]}')
-
-            np.random.seed(10)
-            RandomSart = np.random.randint(
-                low=0, high=300 - SubSequenceLength, size=NumRandomSubSequence
-            )
-            # print (f'RandomSart: {RandomSart}')
-
-            dat3 = NRandomSubSequence_dataset(
-                dat2, newtiers, newinds, RandomSart, SubSequenceLength
+            dat3 = NRandomSubSequenceDataset(
+                original_dat=dat2,
+                num_random_subsequence=num_random_subsequence,
+                subsequence_length=subsequence_length,
+                sequence_length=sequence_length,
+                random_start=random_start,
             )
 
             tier = None
@@ -208,7 +204,7 @@ def mouse_video_loader(
             keys = [tier] if tier else list(set(list(dat2.trial_info.tiers)))
             for tier in keys:
                 if tier != "none":
-                    subset_idx = np.where(np.array(newtiers) == tier)[0]
+                    subset_idx = np.where(np.array(dat3.new_tiers) == tier)[0]
                     sampler = (
                         SubsetRandomSampler(subset_idx)
                         if tier == "train"
@@ -227,44 +223,3 @@ def mouse_video_loader(
             dataloaders_combined[k][dataset_name] = v
 
     return dataloaders_combined
-
-
-class NRandomSubSequence_dataset(Dataset):
-    """
-    Generate a new dataset based on dat2, by random sampling of each training item in dat2 for multiple times.
-    This only works for video data and each sampling is a subsequence of the full sequence in dat2.
-    """
-
-    def __init__(self, dat2, newtiers, newinds, RandomSart, SubSequenceLength):
-        self.dat2 = dat2
-        self.newtiers = newtiers
-        self.newinds = newinds
-        self.RandomStart = RandomSart
-        self.num4rand = len(self.RandomStart)
-        self.RandomEnd = self.RandomStart + SubSequenceLength
-
-    def __getitem__(self, index):
-        # datapoint = namedtuple("DataPoint", self.dat2.data_keys)
-        if self.newtiers[index] == "train":
-            return self.dat2[self.newinds[index]].__class__(
-                **{
-                    k: getattr(self.dat2[self.newinds[index]], k)[
-                        :,
-                        self.RandomStart[index % self.num4rand] : self.RandomEnd[
-                            index % self.num4rand
-                        ],
-                    ]
-                    for k in self.dat2[self.newinds[index]]._fields
-                }
-            )
-
-        else:
-            return self.dat2[self.newinds[index]]
-        # {k: getattr(self.dat2[ self.newinds[index] ],k) for k in self.dat2[ self.newinds[index] ]._fields}
-
-    def __len__(self):
-        return len(self.newtiers)
-
-    @property
-    def neurons(self):
-        return self.dat2.neurons
