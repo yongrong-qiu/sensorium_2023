@@ -20,11 +20,13 @@ from neuralpredictors.data.transforms import (
 )
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
+from nnfabrik.utility.nn_helpers import set_random_seed
 
 
 def mouse_video_loader(
     paths,
     batch_size,
+    seed: int = None,
     neuron_ids: np.array = None,
     normalize=True,
     exclude: str = None,
@@ -53,6 +55,7 @@ def mouse_video_loader(
     Args:
         paths (list): list of paths for the datasets
         batch_size (int): batch size.
+        seed (int): seed. Not really needed. But nnFabrik requires it.
         frames (int, optional): how many frames ot take per video
         max_frame (int, optional): which is the maximal frame that could be taken per video
         offset (int, optional): Offset to start the subsequence from. Defaults to -1, corresponding to random but valid offset at each iteration.
@@ -83,6 +86,8 @@ def mouse_video_loader(
         dict: dictionary of dictionaries where the first level keys are 'train', 'validation', and 'test', and second level keys are data_keys.
     """
 
+    if seed is not None:
+        set_random_seed(seed)
     data_keys = [
         "videos",
         "responses",
