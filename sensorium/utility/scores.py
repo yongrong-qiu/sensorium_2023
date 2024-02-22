@@ -247,6 +247,15 @@ def get_signal_correlations(
             operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(predictions)
             for temp in evaluation_hashes_unique
         ]
+        
+        # in some cases, each repeat may be presented with distinct time frames (1_frame or 2_frame difference)
+        for num in range(len(responses_align)):
+            frames_per_repeat = np.array([ii.shape[1] for ii in responses_align[num]])
+            if len(np.unique(frames_per_repeat))>1: # number of time frames for each repeat are different
+                print (f'Warning: responses_align[{num}] have multiple time frames for repeats: {frames_per_repeat}')
+                responses_align[num]   = [ii[:,-np.min(frames_per_repeat):] for ii in responses_align[num]]
+                predictions_align[num] = [ii[:,-np.min(frames_per_repeat):] for ii in predictions_align[num]]
+
         responses_align = [
             np.transpose(np.array(temp), (0, 2, 1)) for temp in responses_align
         ]
@@ -355,6 +364,15 @@ def model_predictions_align(
             operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(predictions)
             for temp in evaluation_hashes_unique
         ]
+
+        # in some cases, each repeat may be presented with distinct time frames (1_frame or 2_frame difference)
+        for num in range(len(responses_align)):
+            frames_per_repeat = np.array([ii.shape[1] for ii in responses_align[num]])
+            if len(np.unique(frames_per_repeat))>1: # number of time frames for each repeat are different
+                print (f'Warning: responses_align[{num}] have multiple time frames for repeats: {frames_per_repeat}')
+                responses_align[num]   = [ii[:,-np.min(frames_per_repeat):] for ii in responses_align[num]]
+                predictions_align[num] = [ii[:,-np.min(frames_per_repeat):] for ii in predictions_align[num]]
+
         responses_align = [
             np.transpose(np.array(temp), (0, 2, 1)) for temp in responses_align
         ]
