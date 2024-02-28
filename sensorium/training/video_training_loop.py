@@ -38,6 +38,7 @@ def standard_trainer(
     min_lr=0.0001,
     cb=None,
     detach_core=False,
+    core_state_dict=None,
     use_wandb=True,
     wandb_project="factorised_core_parameter_search",
     wandb_entity="movies_parameter_search",
@@ -77,6 +78,7 @@ def standard_trainer(
         lr_decay_factor: factor to decay the learning rate with
         min_lr: minimum learning rate
         cb: whether to execute callback function
+        core_state_dict: if detach_core=True, we would use transfer learning, and the core is borrowed from this state_dict (.pth) file
         **kwargs:
 
     Returns:
