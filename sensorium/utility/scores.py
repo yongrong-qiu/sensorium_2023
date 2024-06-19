@@ -1,6 +1,7 @@
 import warnings
 
 import numpy as np
+from scipy import stats
 import torch
 from neuralpredictors.measures.np_functions import corr
 from neuralpredictors.training import device_state
@@ -247,14 +248,22 @@ def get_signal_correlations(
             operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(predictions)
             for temp in evaluation_hashes_unique
         ]
-        
+
         # in some cases, each repeat may be presented with distinct time frames (1_frame or 2_frame difference)
         for num in range(len(responses_align)):
             frames_per_repeat = np.array([ii.shape[1] for ii in responses_align[num]])
-            if len(np.unique(frames_per_repeat))>1: # number of time frames for each repeat are different
-                print (f'Warning: responses_align[{num}] have multiple time frames for repeats: {frames_per_repeat}')
-                responses_align[num]   = [ii[:,-np.min(frames_per_repeat):] for ii in responses_align[num]]
-                predictions_align[num] = [ii[:,-np.min(frames_per_repeat):] for ii in predictions_align[num]]
+            if (
+                len(np.unique(frames_per_repeat)) > 1
+            ):  # number of time frames for each repeat are different
+                print(
+                    f"Warning: responses_align[{num}] have multiple time frames for repeats: {frames_per_repeat}"
+                )
+                responses_align[num] = [
+                    ii[:, -np.min(frames_per_repeat) :] for ii in responses_align[num]
+                ]
+                predictions_align[num] = [
+                    ii[:, -np.min(frames_per_repeat) :] for ii in predictions_align[num]
+                ]
 
         responses_align = [
             np.transpose(np.array(temp), (0, 2, 1)) for temp in responses_align
@@ -368,10 +377,18 @@ def model_predictions_align(
         # in some cases, each repeat may be presented with distinct time frames (1_frame or 2_frame difference)
         for num in range(len(responses_align)):
             frames_per_repeat = np.array([ii.shape[1] for ii in responses_align[num]])
-            if len(np.unique(frames_per_repeat))>1: # number of time frames for each repeat are different
-                print (f'Warning: responses_align[{num}] have multiple time frames for repeats: {frames_per_repeat}')
-                responses_align[num]   = [ii[:,-np.min(frames_per_repeat):] for ii in responses_align[num]]
-                predictions_align[num] = [ii[:,-np.min(frames_per_repeat):] for ii in predictions_align[num]]
+            if (
+                len(np.unique(frames_per_repeat)) > 1
+            ):  # number of time frames for each repeat are different
+                print(
+                    f"Warning: responses_align[{num}] have multiple time frames for repeats: {frames_per_repeat}"
+                )
+                responses_align[num] = [
+                    ii[:, -np.min(frames_per_repeat) :] for ii in responses_align[num]
+                ]
+                predictions_align[num] = [
+                    ii[:, -np.min(frames_per_repeat) :] for ii in predictions_align[num]
+                ]
 
         responses_align = [
             np.transpose(np.array(temp), (0, 2, 1)) for temp in responses_align
@@ -383,5 +400,292 @@ def model_predictions_align(
         ]
         responses_aligns[data_key] = responses_align
         predictions_aligns[data_key] = predictions_align
-        
+
     return evaluation_hashes_unique, responses_aligns, predictions_aligns
+
+
+def get_responses_align(
+    dataloaders,
+    tier,
+    stimulus_type=None,
+    evaluation_hashes_unique=None,
+):
+    """
+    Get the responses that aligned to condition_hashes.
+    For the test loaders, we may have different stimulus_types, such as clip and dotsequence,
+    we may compute the correlations for some specific stimulus_type.
+
+    Args:
+        dataloaders (obj): PyTorch Dataloaders, without tier
+        tier (str):
+        stimulus_type (str): such as "clip" and "dotsequence"
+        evaluation_hashes_unique: 1D array, unique condition_hash for evaluation
+
+    Returns:
+        evaluation_hashes_unique
+        responses_aligns
+    """
+    responses_aligns = {}
+    for data_key, dataloader in dataloaders[tier].items():
+        tier_hashes, evaluation_hashes_unique_temp = get_data_filetree_loader(
+            dataloader=dataloader, tier=tier, stimulus_type=stimulus_type
+        )
+        if evaluation_hashes_unique is None:
+            evaluation_hashes_unique = evaluation_hashes_unique_temp
+
+        target = []
+        skip = 0
+        for batch in dataloader:
+            batch_kwargs = batch._asdict() if not isinstance(batch, dict) else batch
+            images, responses = (
+                batch[:2]
+                if not isinstance(batch, dict)
+                else (batch["videos"], batch["responses"])
+            )
+            with torch.no_grad():
+                resp = responses.detach().cpu().numpy()[:, :, skip:]
+                target = target + list(resp)
+
+        responses_align = [
+            operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(target)
+            for temp in evaluation_hashes_unique
+        ]
+
+        # print (f'evaluation_hashes_unique: {evaluation_hashes_unique}')
+        # for ii in range(len(responses_align)):
+        #     print (f'np.array(responses_align[{ii}]).shape: {np.array(responses_align[ii]).shape}')
+        responses_align = [
+            np.transpose(np.array(temp), (0, 2, 1)) for temp in responses_align
+        ]
+        # responses_align: a list of array, each array corresponds to reponses to one condition_hash,
+        # array shape (num_of_repeats_for_that_hash, num_of_frames_for_that_trial, num_of_neurons)
+        responses_aligns[data_key] = responses_align
+
+    return evaluation_hashes_unique, responses_aligns
+
+
+def get_oracle_corr_slope(responses_aligns, datakey):
+    """
+    Compute the leave-one-out oracle correlation and the slope of points of repeat, for each neuron
+    For each repeat of test responses, we calculate the correlation between this repeat and the
+    mean of remaining repeats. For these correlation numbers, we compute the average as leave-one-out correlation,
+    or we fit a linear line to them and use the slope of the line as oracle-correlation slope.
+
+    Args:
+        responses_aligns: a list of aligned responses got from get_responses_align()
+        datakey:
+
+    Returns:
+        n_repeats_oracle: number of repeats.
+        oracle_corr_consistency: shape(number_of_neurons, number_of_repeats)
+        oracle_corr: shape(number_of_neurons,)
+        oracle_corr_slope: shape(number_of_neurons,)
+
+    """
+    # as we may have different number of repeats, here we use the minimum value
+    # we assume only one datakey
+    n_repeats_oracle = np.min([temp.shape[0] for temp in responses_aligns[datakey]])
+    print(f"number_of_repeats for all conditon_hashes: {n_repeats_oracle}")
+    oracle_responses_trials = np.concatenate(
+        [temp[:n_repeats_oracle, :, :] for temp in responses_aligns[datakey]], axis=1
+    )
+    # change the shape to (num_of_neurons, num_of_frames_for_all_trial, num_of_repeats_for_that_hash)
+    oracle_responses_trials = np.transpose(
+        oracle_responses_trials, (2, 1, 0)
+    )  # shape (5759, 1800, 14)
+    print(f"oracle_responses_trials.shape: {oracle_responses_trials.shape}")
+
+    oracle_corr = np.zeros((oracle_responses_trials.shape[0]))
+    oracle_corr_consistency = np.zeros(
+        (oracle_responses_trials.shape[0], n_repeats_oracle)
+    )
+    oracle_corr_slope = np.zeros((oracle_responses_trials.shape[0], 2))
+
+    for cc in range(oracle_responses_trials.shape[0]):
+        for ii in range(n_repeats_oracle):
+            current_repeats = np.linspace(
+                0, n_repeats_oracle - 1, n_repeats_oracle
+            ).astype(int)
+            current_repeats = np.delete(current_repeats, ii)
+            oracle_corr_consistency[cc, ii] = stats.pearsonr(
+                oracle_responses_trials[cc, :, ii],
+                oracle_responses_trials[cc, :, current_repeats].mean(axis=0),
+            )[0]
+            oracle_corr[cc] += (
+                stats.pearsonr(
+                    oracle_responses_trials[cc, :, ii],
+                    oracle_responses_trials[cc, :, current_repeats].mean(axis=0),
+                )[0]
+                / n_repeats_oracle
+            )
+        oracle_corr_slope[cc] = np.polyfit(
+            np.linspace(0, 1, n_repeats_oracle), oracle_corr_consistency[cc], 1
+        )
+    return n_repeats_oracle, oracle_corr_consistency, oracle_corr, oracle_corr_slope
+
+
+def get_videos_align(
+    dataloaders,
+    tier,
+    stimulus_type=None,
+    evaluation_hashes_unique=None,
+):
+    """
+    Get the video data that aligned to condition_hashes.
+    For the test loaders, we may have different stimulus_types, such as clip and dotsequence,
+    we may compute the correlations for some specific stimulus_type.
+
+    Args:
+        dataloaders (obj): PyTorch Dataloaders, without tier
+        tier (str):
+        stimulus_type (str): such as "clip" and "dotsequence"
+        evaluation_hashes_unique: 1D array, unique condition_hash for evaluation
+
+    Returns:
+        evaluation_hashes_unique
+        videos_aligns
+    """
+    videos_aligns = {}
+    for data_key, dataloader in dataloaders[tier].items():
+        tier_hashes, evaluation_hashes_unique_temp = get_data_filetree_loader(
+            dataloader=dataloader, tier=tier, stimulus_type=stimulus_type
+        )
+        if evaluation_hashes_unique is None:
+            evaluation_hashes_unique = evaluation_hashes_unique_temp
+
+        target = []
+        skip = 0
+        for batch in dataloader:
+            batch_kwargs = batch._asdict() if not isinstance(batch, dict) else batch
+            images, responses = (
+                batch[:2]
+                if not isinstance(batch, dict)
+                else (batch["videos"], batch["responses"])
+            )
+            with torch.no_grad():
+                img = images.detach().cpu().numpy()[:, :, skip:]
+                target = target + list(img)
+
+        videos_align = [
+            operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(target)
+            for temp in evaluation_hashes_unique
+        ]
+
+        videos_align = [np.array(temp)[:, 0, :, :, :] for temp in videos_align]
+        # videos_align: a list of array, each array corresponds to videos to one condition_hash,
+        # array shape (num_of_repeats_for_that_hash, num_of_frames_for_that_trial, height, width)
+        videos_aligns[data_key] = videos_align
+
+    return evaluation_hashes_unique, videos_aligns
+
+
+def get_behavior_align(
+    dataloaders,
+    tier,
+    stimulus_type=None,
+    evaluation_hashes_unique=None,
+):
+    """
+    Get the behavior data that aligned to condition_hashes.
+    For the test loaders, we may have different stimulus_types, such as clip and dotsequence,
+    we may compute the correlations for some specific stimulus_type.
+
+    Args:
+        dataloaders (obj): PyTorch Dataloaders, without tier
+        tier (str):
+        stimulus_type (str): such as "clip" and "dotsequence"
+        evaluation_hashes_unique: 1D array, unique condition_hash for evaluation
+
+    Returns:
+        evaluation_hashes_unique
+        behavior_aligns
+    """
+    behavior_aligns = {}
+    for data_key, dataloader in dataloaders[tier].items():
+        tier_hashes, evaluation_hashes_unique_temp = get_data_filetree_loader(
+            dataloader=dataloader, tier=tier, stimulus_type=stimulus_type
+        )
+        if evaluation_hashes_unique is None:
+            evaluation_hashes_unique = evaluation_hashes_unique_temp
+
+        target = []
+        skip = 0
+        for batch in dataloader:
+            batch_kwargs = batch._asdict() if not isinstance(batch, dict) else batch
+            images, responses, behavior = (
+                batch[:3]
+                if not isinstance(batch, dict)
+                else (batch["videos"], batch["responses"], batch["behavior"])
+            )
+            with torch.no_grad():
+                behav = behavior.detach().cpu().numpy()[:, :, skip:]
+                target = target + list(behav)
+
+        behavior_align = [
+            operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(target)
+            for temp in evaluation_hashes_unique
+        ]
+
+        behavior_align = [
+            np.transpose(np.array(temp), (0, 2, 1)) for temp in behavior_align
+        ]
+        # behavior_align: a list of array, each array corresponds to behavior to one condition_hash,
+        # array shape (num_of_repeats_for_that_hash, num_of_frames_for_that_trial, 2)
+        behavior_aligns[data_key] = behavior_align
+
+    return evaluation_hashes_unique, behavior_aligns
+
+
+def get_pupil_center_align(
+    dataloaders,
+    tier,
+    stimulus_type=None,
+    evaluation_hashes_unique=None,
+):
+    """
+    Get the pupil_center data that aligned to condition_hashes.
+    For the test loaders, we may have different stimulus_types, such as clip and dotsequence,
+    we may compute the correlations for some specific stimulus_type.
+
+    Args:
+        dataloaders (obj): PyTorch Dataloaders, without tier
+        tier (str):
+        stimulus_type (str): such as "clip" and "dotsequence"
+        evaluation_hashes_unique: 1D array, unique condition_hash for evaluation
+
+    Returns:
+        evaluation_hashes_unique
+        pupil_center_aligns
+    """
+    pupil_center_aligns = {}
+    for data_key, dataloader in dataloaders[tier].items():
+        tier_hashes, evaluation_hashes_unique_temp = get_data_filetree_loader(
+            dataloader=dataloader, tier=tier, stimulus_type=stimulus_type
+        )
+        if evaluation_hashes_unique is None:
+            evaluation_hashes_unique = evaluation_hashes_unique_temp
+
+        target = []
+        skip = 0
+        for batch in dataloader:
+            batch_kwargs = batch._asdict() if not isinstance(batch, dict) else batch
+            pupil_center = (
+                batch[3] if not isinstance(batch, dict) else (batch["pupil_center"])
+            )
+            with torch.no_grad():
+                pupil_cent = pupil_center.detach().cpu().numpy()[:, :, skip:]
+                target = target + list(pupil_cent)
+
+        pupil_center_align = [
+            operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(target)
+            for temp in evaluation_hashes_unique
+        ]
+
+        pupil_center_align = [
+            np.transpose(np.array(temp), (0, 2, 1)) for temp in pupil_center_align
+        ]
+        # pupil_center_align: a list of array, each array corresponds to pupil_center to one condition_hash,
+        # array shape (num_of_repeats_for_that_hash, num_of_frames_for_that_trial, 2)
+        pupil_center_aligns[data_key] = pupil_center_align
+
+    return evaluation_hashes_unique, pupil_center_aligns
