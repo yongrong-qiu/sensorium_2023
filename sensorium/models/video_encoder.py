@@ -100,7 +100,9 @@ class VideoFiringRateEncoder(nn.Module):
             pupil_center = pupil_center.reshape(((-1,) + pupil_center.size()[2:]))
             shift = self.shifter[data_key](pupil_center, trial_idx)
 
+        # x.shape: (batch_size, depth, channel, height, width), depth: number of frames along temporal axis
         x = x.reshape(((-1,) + x.size()[2:]))
+        # x.shape: (batch_size*depth, channel, height, width)
         x = self.readout(x, data_key=data_key, shift=shift, **kwargs)
 
         if self.modulator:

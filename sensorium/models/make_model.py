@@ -111,10 +111,14 @@ def make_video_model(
 
     if "3D" in core_type:
         subselect = itemgetter(0, 2, 3)
+        # in_name: 'videos'
+        # get_module_output(core, v[in_name]): torch.Size([1, 64, 282, 18, 46])
+        # which can be interpreted as torch.Size([batch_size, channel, depth, width, height])
         in_shapes_dict = {
             k: subselect(tuple(get_module_output(core, v[in_name])[1:]))
             for k, v in session_shape_dict.items()
         }
+        # in_shapes_dict = {'dynamic29163-4-4-Fluorescence-7b721b': (64, 18, 46)}
     else:
         session_shape_dict_2d = {
             k: torch.Size([v[in_name][0] * v[in_name][2], v[in_name][1]])
