@@ -3,6 +3,7 @@ from functools import partial
 
 import numpy as np
 import torch
+import torch.nn as nn
 import wandb
 from neuralpredictors.measures import modules
 from neuralpredictors.training import LongCycler, early_stopping
@@ -109,6 +110,28 @@ def standard_trainer(
 
         original_data = args[1].transpose(2, 1)[:, -time_left:, :].to(device)
 
+        # unit speed loss
+        # model.readout[data_key].feature_latent.shape: (num_of_neuron, feature_latent_dim)
+        # model.readout[data_key].features.shape: (1, channel_num, 1, num_of_neuron)
+        # inputs: (m, d) tensor
+        mm, dd = model.readout[data_key].feature_latent.shape
+        # outputs tensor
+        nnn = model.readout[data_key].features.shape[1]
+        # Compute Jacobian for each data point
+        jacobians = []
+        for ii in range(mm):
+            J_i = torch.autograd.functional.jacobian(lambda x: model.readout[data_key].features[0, :, 0, ii], model.readout[data_key].feature_latent[ii,:])
+            jacobians.append(J_i)
+        jacobians = torch.stack(jacobians)  # Shape: (m, n, d)
+        # print (f'jacobians.shape: {jacobians.shape}')
+        # assert False
+        # Compute metric tensor G_i = J_i^T @ J_i for each data point
+        G = torch.einsum('mnd,mne->mde', jacobians, jacobians)
+        # Create identity matrix replicated across all samples (m, d, d)
+        E = torch.eye(dd).unsqueeze(0).expand(mm, -1, -1).to(G.device)
+        # Compute MSE loss between G and E
+        unitspeedloss = nn.functional.mse_loss(G, E)
+
         return (
             loss_scale
             * criterion(
@@ -116,6 +139,7 @@ def standard_trainer(
                 original_data,
             )
             + regularizers
+            + unitspeedloss
         )
 
     ##### Model training ####################################################################################################
