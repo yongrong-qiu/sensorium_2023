@@ -139,7 +139,7 @@ def standard_trainer(
                 original_data,
             )
             + regularizers
-            + unitspeedloss * 10.0 
+            + unitspeedloss * 100.0 
         )
 
     ##### Model training ####################################################################################################
