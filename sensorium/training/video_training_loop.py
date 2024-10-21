@@ -9,6 +9,7 @@ from neuralpredictors.measures import modules
 from neuralpredictors.training import LongCycler, early_stopping
 from nnfabrik.utility.nn_helpers import set_random_seed
 from tqdm import tqdm
+from torch.func import jacfwd, vmap
 
 from ..utility import scores
 from ..utility.scores import get_correlations, get_poisson_loss
@@ -52,6 +53,8 @@ def standard_trainer(
     chpt_save_step=15,
     deeplake_ds=False,
     validation_str = "oracle", # or "validation"
+    unit_speed_flag=False,
+    unit_speed_scale=0,
     **kwargs,
 ):
     """
@@ -111,26 +114,32 @@ def standard_trainer(
         original_data = args[1].transpose(2, 1)[:, -time_left:, :].to(device)
 
         # unit speed loss
-        # model.readout[data_key].feature_latent.shape: (num_of_neuron, feature_latent_dim)
-        # model.readout[data_key].features.shape: (1, channel_num, 1, num_of_neuron)
-        # inputs: (m, d) tensor
-        mm, dd = model.readout[data_key].feature_latent.shape
-        # outputs tensor
-        nnn = model.readout[data_key].features.shape[1]
-        # Compute Jacobian for each data point
-        jacobians = []
-        for ii in range(mm):
-            J_i = torch.autograd.functional.jacobian(lambda x: model.readout[data_key].features[0, :, 0, ii], model.readout[data_key].feature_latent[ii,:])
-            jacobians.append(J_i)
-        jacobians = torch.stack(jacobians)  # Shape: (m, n, d)
-        # print (f'jacobians.shape: {jacobians.shape}')
-        # assert False
-        # Compute metric tensor G_i = J_i^T @ J_i for each data point
-        G = torch.einsum('mnd,mne->mde', jacobians, jacobians)
-        # Create identity matrix replicated across all samples (m, d, d)
-        E = torch.eye(dd).unsqueeze(0).expand(mm, -1, -1).to(G.device)
-        # Compute MSE loss between G and E
-        unitspeedloss = nn.functional.mse_loss(G, E)
+        unitspeedloss = torch.zeros(1).to(device)
+        if kwargs['unit_speed_flag']:
+            # model.readout[data_key].feature_latent.shape: (num_of_neuron, feature_latent_dim)
+            # model.readout[data_key].features.shape: (1, channel_num, 1, num_of_neuron)
+            # inputs: (m, d) tensor
+            mm, dd = model.readout[data_key].feature_latent.shape
+            # outputs tensor
+            nnn = model.readout[data_key].features.shape[1]
+            # Compute Jacobian for each data point
+            # jacobians = []
+            # for ii in range(mm):
+            #     J_i = torch.autograd.functional.jacobian(lambda x: model.readout[data_key].features[0, :, 0, ii], model.readout[data_key].feature_latent[ii,:])
+            #     jacobians.append(J_i)
+            # jacobians = torch.stack(jacobians)  # Shape: (m, n, d)
+            t_values = model.readout[data_key].feature_latent
+            jacobians = vmap(jacfwd(model.readout[data_key].feature_mlp))(t_values)
+            jacobians = jacobians.squeeze()  # # Shape: (m, n, d)
+
+            # print (f'jacobians.shape: {jacobians.shape}')
+            # assert False
+            # Compute metric tensor G_i = J_i^T @ J_i for each data point
+            G = torch.einsum('mnd,mne->mde', jacobians, jacobians)
+            # Create identity matrix replicated across all samples (m, d, d)
+            E = torch.eye(dd).unsqueeze(0).expand(mm, -1, -1).to(G.device)
+            # Compute MSE loss between G and E
+            unitspeedloss = nn.functional.mse_loss(G, E)
 
         return (
             loss_scale
@@ -139,7 +148,7 @@ def standard_trainer(
                 original_data,
             )
             + regularizers
-            + unitspeedloss * 100.0 
+            + unitspeedloss * kwargs['unit_speed_scale']
         )
 
     ##### Model training ####################################################################################################
@@ -242,6 +251,8 @@ def standard_trainer(
                 *batch_args,
                 **batch_kwargs,
                 detach_core=detach_core,
+                unit_speed_flag=unit_speed_flag,
+                unit_speed_scale=unit_speed_scale,
             )
             loss = loss/optim_step_count
             loss.backward()
@@ -278,6 +289,8 @@ def standard_trainer(
             *batch_args,
             **batch_kwargs,
             detach_core=detach_core,
+            unit_speed_flag=unit_speed_flag,
+            unit_speed_scale=unit_speed_scale,
         )
         print(
             f"Epoch {epoch}, Batch {batch_no}, Train loss {loss}, Validation loss {val_loss}"
