@@ -32,6 +32,8 @@ def make_video_model(
     nonlinearity_type="elu",
     nonlinearity_config=None,
     deeplake_ds=False,
+    feature_latent_flag=False,
+    feature_latent_dim=2,
 ):
     """
     Model class of a stacked2dCore (from neuralpredictors) and a pointpooled (spatial transformer) readout
@@ -145,6 +147,19 @@ def make_video_model(
     readout_dict["n_neurons_dict"] = n_neurons_dict
     readout_dict["loaders"] = dataloaders
 
+    if feature_latent_flag:
+        channel_num = list(in_shapes_dict.values())[0][0]
+        feature_mlp = nn.Sequential(
+            nn.Linear(feature_latent_dim, 32),
+            nn.ReLU(), # nn.LeakyReLU() # nn.ReLU(), # nn.Tanh(), 
+            # nn.Linear(32, 64),
+            # nn.ReLU(), 
+            nn.Linear(32, 128),
+            nn.ReLU(), 
+            nn.Linear(128, channel_num),
+            # nn.Tanh(),
+        )
+
     if readout_type == "gaussian":
         grid_mean_predictor, grid_mean_predictor_type, source_grids = prepare_grid(
             readout_dict["grid_mean_predictor"], dataloaders, deeplake_ds
@@ -154,6 +169,10 @@ def make_video_model(
         readout_dict["grid_mean_predictor"] = grid_mean_predictor
         readout_dict["grid_mean_predictor_type"] = grid_mean_predictor_type
         readout_dict["source_grids"] = source_grids
+
+        readout_dict["feature_latent_flag"] = feature_latent_flag
+        readout_dict["feature_mlp"] = feature_mlp
+        readout_dict["feature_latent_dim"] = feature_latent_dim
         readout = MultipleFullGaussian2d(**readout_dict)
 
     elif readout_type == "factorised":
