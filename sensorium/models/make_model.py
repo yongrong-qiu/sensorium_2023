@@ -34,6 +34,8 @@ def make_video_model(
     deeplake_ds=False,
     feature_latent_flag=False,
     feature_latent_dim=2,
+    position_encoding_flag=False,
+    position_encoding_k=16,
 ):
     """
     Model class of a stacked2dCore (from neuralpredictors) and a pointpooled (spatial transformer) readout
@@ -149,16 +151,28 @@ def make_video_model(
 
     if feature_latent_flag:
         channel_num = list(in_shapes_dict.values())[0][0]
-        feature_mlp = nn.Sequential(
-            nn.Linear(feature_latent_dim, 32),
-            nn.ReLU(), # nn.LeakyReLU() # nn.ReLU(), # nn.Tanh(), 
-            # nn.Linear(32, 64),
-            # nn.ReLU(), 
-            nn.Linear(32, 128),
-            nn.ReLU(), 
-            nn.Linear(128, channel_num),
-            # nn.Tanh(),
-        )
+        if position_encoding_flag:
+            feature_mlp = nn.Sequential(
+                # nn.Linear(feature_latent_dim, 32),
+                # nn.ReLU(), # nn.LeakyReLU() # nn.ReLU(), # nn.Tanh(), 
+                # # nn.Linear(32, 64),
+                # # nn.ReLU(), 
+                nn.Linear(position_encoding_k*2*feature_latent_dim, 128),
+                nn.ReLU(), 
+                nn.Linear(128, channel_num),
+                # nn.Tanh(),
+            )
+        else:
+            feature_mlp = nn.Sequential(
+                nn.Linear(feature_latent_dim, 32),
+                nn.ReLU(), # nn.LeakyReLU() # nn.ReLU(), # nn.Tanh(), 
+                # nn.Linear(32, 64),
+                # nn.ReLU(), 
+                nn.Linear(32, 128),
+                nn.ReLU(), 
+                nn.Linear(128, channel_num),
+                # nn.Tanh(),
+            )
 
     if readout_type == "gaussian":
         grid_mean_predictor, grid_mean_predictor_type, source_grids = prepare_grid(
@@ -173,6 +187,8 @@ def make_video_model(
         readout_dict["feature_latent_flag"] = feature_latent_flag
         readout_dict["feature_mlp"] = feature_mlp
         readout_dict["feature_latent_dim"] = feature_latent_dim
+        readout_dict["position_encoding_flag"] = position_encoding_flag
+        readout_dict["position_encoding_k"] = position_encoding_k
         readout = MultipleFullGaussian2d(**readout_dict)
 
     elif readout_type == "factorised":
