@@ -129,9 +129,18 @@ def standard_trainer(
             #     jacobians.append(J_i)
             # jacobians = torch.stack(jacobians)  # Shape: (m, n, d)
             t_values = model.readout[data_key].feature_latent
+            if model.readout[data_key].position_encoding_flag:
+                def g(x):
+                    result = model.readout[data_key].pos_enc_func(x)
+                    return result, result
+                J1, t_values = vmap(jacfwd(g, has_aux=True))(t_values)
+                J1 = J1.squeeze()
+                # print (f'J1.shape: {J1.shape}')
             jacobians = vmap(jacfwd(model.readout[data_key].feature_mlp))(t_values)
             jacobians = jacobians.squeeze()  # # Shape: (m, n, d)
-
+            # print (f'jacobians.shape: {jacobians.shape}')
+            if model.readout[data_key].position_encoding_flag:
+                jacobians = jacobians @ J1
             # print (f'jacobians.shape: {jacobians.shape}')
             # assert False
             # Compute metric tensor G_i = J_i^T @ J_i for each data point
