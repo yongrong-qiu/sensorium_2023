@@ -185,7 +185,8 @@ def make_video_model(
         readout_dict["source_grids"] = source_grids
 
         readout_dict["feature_latent_flag"] = feature_latent_flag
-        readout_dict["feature_mlp"] = feature_mlp
+        if feature_latent_flag:
+            readout_dict["feature_mlp"] = feature_mlp
         readout_dict["feature_latent_dim"] = feature_latent_dim
         readout_dict["position_encoding_flag"] = position_encoding_flag
         readout_dict["position_encoding_k"] = position_encoding_k
