@@ -207,6 +207,7 @@ def get_signal_correlations(
     stimulus_type=None,
     evaluation_hashes_unique=None,
     device="cpu",
+    datakeys=None, # a list of data keys
     as_dict=False,
     per_neuron=True,
 ):
@@ -231,72 +232,75 @@ def get_signal_correlations(
     mean_corrs = {}
     single_trial_corrs = {}
     for data_key, dataloader in dataloaders[tier].items():
-        tier_hashes, evaluation_hashes_unique_temp = get_data_filetree_loader(
-            dataloader=dataloader, tier=tier, stimulus_type=stimulus_type
-        )
-        if evaluation_hashes_unique is None:
-            evaluation_hashes_unique = evaluation_hashes_unique_temp
+        if datakeys is None or data_key in datakeys:
+            tier_hashes, evaluation_hashes_unique_temp = get_data_filetree_loader(
+                dataloader=dataloader, tier=tier, stimulus_type=stimulus_type
+            )
+            if evaluation_hashes_unique is None:
+                evaluation_hashes_unique = evaluation_hashes_unique_temp
 
-        responses, predictions = model_predictions(
-            model, dataloader, data_key=data_key, device=device
-        )
-        responses_align = [
-            operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(responses)
-            for temp in evaluation_hashes_unique
-        ]
-        predictions_align = [
-            operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(predictions)
-            for temp in evaluation_hashes_unique
-        ]
+            responses, predictions = model_predictions(
+                model, dataloader, data_key=data_key, device=device
+            )
+            responses_align = [
+                operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(responses)
+                for temp in evaluation_hashes_unique
+            ]
+            predictions_align = [
+                operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(predictions)
+                for temp in evaluation_hashes_unique
+            ]
 
-        # in some cases, each repeat may be presented with distinct time frames (1_frame or 2_frame difference)
-        for num in range(len(responses_align)):
-            frames_per_repeat = np.array([ii.shape[1] for ii in responses_align[num]])
-            if (
-                len(np.unique(frames_per_repeat)) > 1
-            ):  # number of time frames for each repeat are different
-                print(
-                    f"Warning: responses_align[{num}] have multiple time frames for repeats: {frames_per_repeat}"
-                )
-                responses_align[num] = [
-                    ii[:, -np.min(frames_per_repeat) :] for ii in responses_align[num]
-                ]
-                predictions_align[num] = [
-                    ii[:, -np.min(frames_per_repeat) :] for ii in predictions_align[num]
-                ]
+            # in some cases, each repeat may be presented with distinct time frames (1_frame or 2_frame difference)
+            for num in range(len(responses_align)):
+                frames_per_repeat = np.array([ii.shape[1] for ii in responses_align[num]])
+                if (
+                    len(np.unique(frames_per_repeat)) > 1
+                ):  # number of time frames for each repeat are different
+                    print(
+                        f"Warning: responses_align[{num}] have multiple time frames for repeats: {frames_per_repeat}"
+                    )
+                    responses_align[num] = [
+                        ii[:, -np.min(frames_per_repeat) :] for ii in responses_align[num]
+                    ]
+                    predictions_align[num] = [
+                        ii[:, -np.min(frames_per_repeat) :] for ii in predictions_align[num]
+                    ]
 
-        responses_align = [
-            np.transpose(np.array(temp), (0, 2, 1)) for temp in responses_align
-        ]
-        # responses_align: a list of array, each array corresponds to reponses to one condition_hash,
-        # array shape (num_of_repeats_for_that_hash, num_of_frames_for_that_trial, num_of_neurons)
-        predictions_align = [
-            np.transpose(np.array(temp), (0, 2, 1)) for temp in predictions_align
-        ]
+            responses_align = [
+                np.transpose(np.array(temp), (0, 2, 1)) for temp in responses_align
+            ]
+            # responses_align: a list of array, each array corresponds to reponses to one condition_hash,
+            # array shape (num_of_repeats_for_that_hash, num_of_frames_for_that_trial, num_of_neurons)
+            predictions_align = [
+                np.transpose(np.array(temp), (0, 2, 1)) for temp in predictions_align
+            ]
 
-        # mean correlations
-        temp_responses_align = np.concatenate(
-            [np.mean(temp, axis=0) for temp in responses_align], axis=0
-        )
-        temp_predictions_align = np.concatenate(
-            [np.mean(temp, axis=0) for temp in predictions_align], axis=0
-        )
-        mean_corrs[data_key] = corr(
-            temp_responses_align, temp_predictions_align, axis=0
-        )
-        # single trial correlations
-        temp_responses_align = np.concatenate(responses_align, axis=0)
-        temp_predictions_align = np.concatenate(predictions_align, axis=0)
-        temp_responses_align = np.reshape(
-            temp_responses_align, (-1, temp_responses_align.shape[-1])
-        )
-        temp_predictions_align = np.reshape(
-            temp_predictions_align, (-1, temp_predictions_align.shape[-1])
-        )
-        single_trial_corrs[data_key] = corr(
-            temp_responses_align, temp_predictions_align, axis=0
-        )
-        del temp_responses_align, temp_predictions_align
+            # mean correlations
+            temp_responses_align = np.concatenate(
+                [np.mean(temp, axis=0) for temp in responses_align], axis=0
+            )
+            temp_predictions_align = np.concatenate(
+                [np.mean(temp, axis=0) for temp in predictions_align], axis=0
+            )
+            mean_corrs[data_key] = corr(
+                temp_responses_align, temp_predictions_align, axis=0
+            )
+            # single trial correlations
+            temp_responses_align = np.concatenate(responses_align, axis=0)
+            temp_predictions_align = np.concatenate(predictions_align, axis=0)
+            temp_responses_align = np.reshape(
+                temp_responses_align, (-1, temp_responses_align.shape[-1])
+            )
+            temp_predictions_align = np.reshape(
+                temp_predictions_align, (-1, temp_predictions_align.shape[-1])
+            )
+            single_trial_corrs[data_key] = corr(
+                temp_responses_align, temp_predictions_align, axis=0
+            )
+            del temp_responses_align, temp_predictions_align
+        else:
+            pass
 
     if not as_dict:
         mean_corrs = (
