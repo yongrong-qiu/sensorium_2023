@@ -474,6 +474,19 @@ def get_responses_align(
                 for temp in evaluation_hashes_unique
             ]
 
+            # in some cases, each repeat may be presented with distinct time frames (1_frame or 2_frame difference)
+            for num in range(len(responses_align)):
+                frames_per_repeat = np.array([ii.shape[1] for ii in responses_align[num]])
+                if (
+                    len(np.unique(frames_per_repeat)) > 1
+                ):  # number of time frames for each repeat are different
+                    print(
+                        f"Warning: responses_align[{num}] have multiple time frames for repeats: {frames_per_repeat}"
+                    )
+                    responses_align[num] = [
+                        ii[:, -np.min(frames_per_repeat) :] for ii in responses_align[num]
+                    ]
+
             # print (f'evaluation_hashes_unique: {evaluation_hashes_unique}')
             # for ii in range(len(responses_align)):
             #     print (f'np.array(responses_align[{ii}]).shape: {np.array(responses_align[ii]).shape}')
@@ -598,6 +611,8 @@ def get_videos_align(
                 for temp in evaluation_hashes_unique
             ]
 
+            # TODO: in some cases, each repeat may be presented with distinct time frames (1_frame or 2_frame difference)
+
             videos_align = [np.array(temp)[:, 0, :, :, :] for temp in videos_align]
             # videos_align: a list of array, each array corresponds to videos to one condition_hash,
             # array shape (num_of_repeats_for_that_hash, num_of_frames_for_that_trial, height, width)
@@ -657,6 +672,18 @@ def get_behavior_align(
                 for temp in evaluation_hashes_unique
             ]
 
+            for num in range(len(behavior_align)):
+                frames_per_repeat = np.array([ii.shape[1] for ii in behavior_align[num]])
+                if (
+                    len(np.unique(frames_per_repeat)) > 1
+                ):  # number of time frames for each repeat are different
+                    print(
+                        f"Warning: behavior_align[{num}] have multiple time frames for repeats: {frames_per_repeat}"
+                    )
+                    behavior_align[num] = [
+                        ii[:, -np.min(frames_per_repeat) :] for ii in behavior_align[num]
+                    ]
+
             behavior_align = [
                 np.transpose(np.array(temp), (0, 2, 1)) for temp in behavior_align
             ]
@@ -715,6 +742,8 @@ def get_pupil_center_align(
                 operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(target)
                 for temp in evaluation_hashes_unique
             ]
+
+            # TODO: in some cases, each repeat may be presented with distinct time frames (1_frame or 2_frame difference)
 
             pupil_center_align = [
                 np.transpose(np.array(temp), (0, 2, 1)) for temp in pupil_center_align
