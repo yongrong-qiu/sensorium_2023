@@ -430,6 +430,7 @@ def get_responses_align(
     tier,
     stimulus_type=None,
     evaluation_hashes_unique=None,
+    datakeys=None, # a list of data keys
 ):
     """
     Get the responses that aligned to condition_hashes.
@@ -448,39 +449,42 @@ def get_responses_align(
     """
     responses_aligns = {}
     for data_key, dataloader in dataloaders[tier].items():
-        tier_hashes, evaluation_hashes_unique_temp = get_data_filetree_loader(
-            dataloader=dataloader, tier=tier, stimulus_type=stimulus_type
-        )
-        if evaluation_hashes_unique is None:
-            evaluation_hashes_unique = evaluation_hashes_unique_temp
-
-        target = []
-        skip = 0
-        for batch in dataloader:
-            batch_kwargs = batch._asdict() if not isinstance(batch, dict) else batch
-            images, responses = (
-                batch[:2]
-                if not isinstance(batch, dict)
-                else (batch["videos"], batch["responses"])
+        if datakeys is None or data_key in datakeys:
+            tier_hashes, evaluation_hashes_unique_temp = get_data_filetree_loader(
+                dataloader=dataloader, tier=tier, stimulus_type=stimulus_type
             )
-            with torch.no_grad():
-                resp = responses.detach().cpu().numpy()[:, :, skip:]
-                target = target + list(resp)
+            if evaluation_hashes_unique is None:
+                evaluation_hashes_unique = evaluation_hashes_unique_temp
 
-        responses_align = [
-            operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(target)
-            for temp in evaluation_hashes_unique
-        ]
+            target = []
+            skip = 0
+            for batch in dataloader:
+                batch_kwargs = batch._asdict() if not isinstance(batch, dict) else batch
+                images, responses = (
+                    batch[:2]
+                    if not isinstance(batch, dict)
+                    else (batch["videos"], batch["responses"])
+                )
+                with torch.no_grad():
+                    resp = responses.detach().cpu().numpy()[:, :, skip:]
+                    target = target + list(resp)
 
-        # print (f'evaluation_hashes_unique: {evaluation_hashes_unique}')
-        # for ii in range(len(responses_align)):
-        #     print (f'np.array(responses_align[{ii}]).shape: {np.array(responses_align[ii]).shape}')
-        responses_align = [
-            np.transpose(np.array(temp), (0, 2, 1)) for temp in responses_align
-        ]
-        # responses_align: a list of array, each array corresponds to reponses to one condition_hash,
-        # array shape (num_of_repeats_for_that_hash, num_of_frames_for_that_trial, num_of_neurons)
-        responses_aligns[data_key] = responses_align
+            responses_align = [
+                operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(target)
+                for temp in evaluation_hashes_unique
+            ]
+
+            # print (f'evaluation_hashes_unique: {evaluation_hashes_unique}')
+            # for ii in range(len(responses_align)):
+            #     print (f'np.array(responses_align[{ii}]).shape: {np.array(responses_align[ii]).shape}')
+            responses_align = [
+                np.transpose(np.array(temp), (0, 2, 1)) for temp in responses_align
+            ]
+            # responses_align: a list of array, each array corresponds to reponses to one condition_hash,
+            # array shape (num_of_repeats_for_that_hash, num_of_frames_for_that_trial, num_of_neurons)
+            responses_aligns[data_key] = responses_align
+        else:
+            pass
 
     return evaluation_hashes_unique, responses_aligns
 
@@ -550,6 +554,7 @@ def get_videos_align(
     tier,
     stimulus_type=None,
     evaluation_hashes_unique=None,
+    datakeys=None, # a list of data keys
 ):
     """
     Get the video data that aligned to condition_hashes.
@@ -568,34 +573,37 @@ def get_videos_align(
     """
     videos_aligns = {}
     for data_key, dataloader in dataloaders[tier].items():
-        tier_hashes, evaluation_hashes_unique_temp = get_data_filetree_loader(
-            dataloader=dataloader, tier=tier, stimulus_type=stimulus_type
-        )
-        if evaluation_hashes_unique is None:
-            evaluation_hashes_unique = evaluation_hashes_unique_temp
-
-        target = []
-        skip = 0
-        for batch in dataloader:
-            batch_kwargs = batch._asdict() if not isinstance(batch, dict) else batch
-            images, responses = (
-                batch[:2]
-                if not isinstance(batch, dict)
-                else (batch["videos"], batch["responses"])
+        if datakeys is None or data_key in datakeys:
+            tier_hashes, evaluation_hashes_unique_temp = get_data_filetree_loader(
+                dataloader=dataloader, tier=tier, stimulus_type=stimulus_type
             )
-            with torch.no_grad():
-                img = images.detach().cpu().numpy()[:, :, skip:]
-                target = target + list(img)
+            if evaluation_hashes_unique is None:
+                evaluation_hashes_unique = evaluation_hashes_unique_temp
 
-        videos_align = [
-            operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(target)
-            for temp in evaluation_hashes_unique
-        ]
+            target = []
+            skip = 0
+            for batch in dataloader:
+                batch_kwargs = batch._asdict() if not isinstance(batch, dict) else batch
+                images, responses = (
+                    batch[:2]
+                    if not isinstance(batch, dict)
+                    else (batch["videos"], batch["responses"])
+                )
+                with torch.no_grad():
+                    img = images.detach().cpu().numpy()[:, :, skip:]
+                    target = target + list(img)
 
-        videos_align = [np.array(temp)[:, 0, :, :, :] for temp in videos_align]
-        # videos_align: a list of array, each array corresponds to videos to one condition_hash,
-        # array shape (num_of_repeats_for_that_hash, num_of_frames_for_that_trial, height, width)
-        videos_aligns[data_key] = videos_align
+            videos_align = [
+                operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(target)
+                for temp in evaluation_hashes_unique
+            ]
+
+            videos_align = [np.array(temp)[:, 0, :, :, :] for temp in videos_align]
+            # videos_align: a list of array, each array corresponds to videos to one condition_hash,
+            # array shape (num_of_repeats_for_that_hash, num_of_frames_for_that_trial, height, width)
+            videos_aligns[data_key] = videos_align
+        else:
+            pass
 
     return evaluation_hashes_unique, videos_aligns
 
@@ -605,6 +613,7 @@ def get_behavior_align(
     tier,
     stimulus_type=None,
     evaluation_hashes_unique=None,
+    datakeys=None, # a list of data keys
 ):
     """
     Get the behavior data that aligned to condition_hashes.
@@ -623,36 +632,39 @@ def get_behavior_align(
     """
     behavior_aligns = {}
     for data_key, dataloader in dataloaders[tier].items():
-        tier_hashes, evaluation_hashes_unique_temp = get_data_filetree_loader(
-            dataloader=dataloader, tier=tier, stimulus_type=stimulus_type
-        )
-        if evaluation_hashes_unique is None:
-            evaluation_hashes_unique = evaluation_hashes_unique_temp
-
-        target = []
-        skip = 0
-        for batch in dataloader:
-            batch_kwargs = batch._asdict() if not isinstance(batch, dict) else batch
-            images, responses, behavior = (
-                batch[:3]
-                if not isinstance(batch, dict)
-                else (batch["videos"], batch["responses"], batch["behavior"])
+        if datakeys is None or data_key in datakeys:
+            tier_hashes, evaluation_hashes_unique_temp = get_data_filetree_loader(
+                dataloader=dataloader, tier=tier, stimulus_type=stimulus_type
             )
-            with torch.no_grad():
-                behav = behavior.detach().cpu().numpy()[:, :, skip:]
-                target = target + list(behav)
+            if evaluation_hashes_unique is None:
+                evaluation_hashes_unique = evaluation_hashes_unique_temp
 
-        behavior_align = [
-            operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(target)
-            for temp in evaluation_hashes_unique
-        ]
+            target = []
+            skip = 0
+            for batch in dataloader:
+                batch_kwargs = batch._asdict() if not isinstance(batch, dict) else batch
+                images, responses, behavior = (
+                    batch[:3]
+                    if not isinstance(batch, dict)
+                    else (batch["videos"], batch["responses"], batch["behavior"])
+                )
+                with torch.no_grad():
+                    behav = behavior.detach().cpu().numpy()[:, :, skip:]
+                    target = target + list(behav)
 
-        behavior_align = [
-            np.transpose(np.array(temp), (0, 2, 1)) for temp in behavior_align
-        ]
-        # behavior_align: a list of array, each array corresponds to behavior to one condition_hash,
-        # array shape (num_of_repeats_for_that_hash, num_of_frames_for_that_trial, 2)
-        behavior_aligns[data_key] = behavior_align
+            behavior_align = [
+                operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(target)
+                for temp in evaluation_hashes_unique
+            ]
+
+            behavior_align = [
+                np.transpose(np.array(temp), (0, 2, 1)) for temp in behavior_align
+            ]
+            # behavior_align: a list of array, each array corresponds to behavior to one condition_hash,
+            # array shape (num_of_repeats_for_that_hash, num_of_frames_for_that_trial, 2)
+            behavior_aligns[data_key] = behavior_align
+        else:
+            pass
 
     return evaluation_hashes_unique, behavior_aligns
 
@@ -662,6 +674,7 @@ def get_pupil_center_align(
     tier,
     stimulus_type=None,
     evaluation_hashes_unique=None,
+    datakeys=None, # a list of data keys
 ):
     """
     Get the pupil_center data that aligned to condition_hashes.
@@ -680,33 +693,36 @@ def get_pupil_center_align(
     """
     pupil_center_aligns = {}
     for data_key, dataloader in dataloaders[tier].items():
-        tier_hashes, evaluation_hashes_unique_temp = get_data_filetree_loader(
-            dataloader=dataloader, tier=tier, stimulus_type=stimulus_type
-        )
-        if evaluation_hashes_unique is None:
-            evaluation_hashes_unique = evaluation_hashes_unique_temp
-
-        target = []
-        skip = 0
-        for batch in dataloader:
-            batch_kwargs = batch._asdict() if not isinstance(batch, dict) else batch
-            pupil_center = (
-                batch[3] if not isinstance(batch, dict) else (batch["pupil_center"])
+        if datakeys is None or data_key in datakeys:
+            tier_hashes, evaluation_hashes_unique_temp = get_data_filetree_loader(
+                dataloader=dataloader, tier=tier, stimulus_type=stimulus_type
             )
-            with torch.no_grad():
-                pupil_cent = pupil_center.detach().cpu().numpy()[:, :, skip:]
-                target = target + list(pupil_cent)
+            if evaluation_hashes_unique is None:
+                evaluation_hashes_unique = evaluation_hashes_unique_temp
 
-        pupil_center_align = [
-            operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(target)
-            for temp in evaluation_hashes_unique
-        ]
+            target = []
+            skip = 0
+            for batch in dataloader:
+                batch_kwargs = batch._asdict() if not isinstance(batch, dict) else batch
+                pupil_center = (
+                    batch[3] if not isinstance(batch, dict) else (batch["pupil_center"])
+                )
+                with torch.no_grad():
+                    pupil_cent = pupil_center.detach().cpu().numpy()[:, :, skip:]
+                    target = target + list(pupil_cent)
 
-        pupil_center_align = [
-            np.transpose(np.array(temp), (0, 2, 1)) for temp in pupil_center_align
-        ]
-        # pupil_center_align: a list of array, each array corresponds to pupil_center to one condition_hash,
-        # array shape (num_of_repeats_for_that_hash, num_of_frames_for_that_trial, 2)
-        pupil_center_aligns[data_key] = pupil_center_align
+            pupil_center_align = [
+                operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(target)
+                for temp in evaluation_hashes_unique
+            ]
+
+            pupil_center_align = [
+                np.transpose(np.array(temp), (0, 2, 1)) for temp in pupil_center_align
+            ]
+            # pupil_center_align: a list of array, each array corresponds to pupil_center to one condition_hash,
+            # array shape (num_of_repeats_for_that_hash, num_of_frames_for_that_trial, 2)
+            pupil_center_aligns[data_key] = pupil_center_align
+        else:
+            pass
 
     return evaluation_hashes_unique, pupil_center_aligns
