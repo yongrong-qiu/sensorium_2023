@@ -755,3 +755,79 @@ def get_pupil_center_align(
             pass
 
     return evaluation_hashes_unique, pupil_center_aligns
+
+
+class Custom_Cmaps:
+    def __init__(self):
+        pass  # If needed, initialize any shared attributes
+
+    def Custom_Cmap1(self):
+        import matplotlib.pyplot as plt
+        from matplotlib.colors import ListedColormap
+
+        # Combine multiple Matplotlib colormaps
+        # Collect colors from multiple colormaps
+        set3_colors = plt.get_cmap('Set3').colors
+        paired_colors = plt.get_cmap('Paired').colors
+        accent_colors = plt.get_cmap('Accent').colors
+        tab10_colors = plt.get_cmap('tab10').colors
+        dark2_colors = plt.get_cmap('Dark2').colors
+        # Concatenate colors and limit to 50
+        combined_colors = (
+            list(set3_colors) +
+            list(paired_colors) +
+            list(accent_colors) +
+            # list(tab20_colors) +
+            list(tab10_colors) +
+            list(dark2_colors)
+        )
+        custom_cmap = ListedColormap(combined_colors[:50])
+        return custom_cmap
+
+    def Custom_Cmap2(self):
+        import matplotlib.pyplot as plt
+        from matplotlib.colors import ListedColormap
+        from matplotlib.colors import rgb_to_hsv, hsv_to_rgb
+
+        qualitative_cmaps = [
+            "Accent", "Dark2", "Paired", "Pastel1", "Pastel2", 
+            "Set1", "Set2", "Set3", "tab10", "tab20", "tab20b", "tab20c",
+            'tab20c',  'terrain', 'turbo', 'twilight', 'twilight_shifted', 'viridis','vlag', 'winter',
+            'Accent', 'Blues', 'BrBG', 'BuGn', 'BuPu', 'CMRmap', 'Dark2', 'GnBu', 
+            'Greens',  'Greys', 'OrRd',  'Oranges', 'PRGn',  'Paired',  'Pastel1',  'Pastel2',
+            'PiYG', 'PuBu', 'PuBuGn',  'PuOr',  'PuRd', 'Purples', 'RdBu', 'RdGy',  'RdPu',  'RdYlBu', 'autumn', 
+        ]
+        colors = []
+        for cmap_name in qualitative_cmaps:
+            cmap = plt.get_cmap(cmap_name)
+            if hasattr(cmap, "colors"):  # Discrete colormaps
+                col_array = np.array(cmap.colors)
+            else:  # Continuous colormaps (sample 10 colors evenly)
+                col_array = np.array([cmap(i) for i in np.linspace(0, 1, 10)])
+            # Convert all colors to RGBA (ensure 4 channels)
+            if col_array.shape[1] == 3:  # If RGB, add alpha=1
+                col_array = np.hstack([col_array, np.ones((col_array.shape[0], 1))])
+            colors.append(col_array)
+        combined_colors = np.vstack(colors)
+        # Convert to HSV for better perceptual filtering
+        hsv_colors = rgb_to_hsv(combined_colors[:, :3])
+        # Sort by Hue (Primary) and Value (Lightness) (Secondary)
+        sorted_indices = np.lexsort((hsv_colors[:, 2], hsv_colors[:, 0]))  # Sort by Lightness first, then Hue
+        sorted_colors = combined_colors[sorted_indices]  # Reorder colors
+        # Sort by Hue and remove colors that are too close in hue
+        unique_colors = [hsv_colors[0]]
+        for color in hsv_colors[1:]:
+            if all(np.linalg.norm(color - c) > 0.18 for c in unique_colors):  # 0.18 is a threshold for color difference
+                unique_colors.append(color)
+        # Convert back to RGB
+        filtered_colors = hsv_to_rgb(np.array(unique_colors))
+        # Create a custom colormap
+        custom_cmap = ListedColormap(filtered_colors[:50])
+
+        # # Plot colors
+        # fig, ax = plt.subplots(figsize=(10, 2))
+        # for i, color in enumerate(filtered_colors[:50]):
+        #     ax.add_patch(plt.Rectangle((i, 0), 1, 1, color=color))
+        # ax.set_xlim(0, 50)
+        # ax.set_ylim(0, 1)
+        return custom_cmap
