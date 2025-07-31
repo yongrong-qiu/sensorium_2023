@@ -7,6 +7,10 @@ from neuralpredictors.measures.np_functions import corr
 from neuralpredictors.training import device_state
 from nnfabrik.builder import get_data
 import operator
+from sklearn.utils.extmath import randomized_svd
+from scipy.signal import find_peaks
+from scipy.stats import pearsonr
+import cv2
 
 
 def model_predictions(
@@ -831,3 +835,37 @@ class Custom_Cmaps:
         # ax.set_xlim(0, 50)
         # ax.set_ylim(0, 1)
         return custom_cmap
+
+
+def mySVD(w): 
+    """
+    w: 3d tensor, shape: (time_lag, height, width)
+    """
+    if len(w.shape) == 3:
+        dims_tRF = w.shape[0]
+        dims_sRF = w.shape[1:]
+        w_old=np.copy(w)
+        w=np.reshape(w,(dims_tRF, np.prod(dims_sRF)))
+        # Data matrix X, centered X
+        w=w-np.mean(w,axis=0)
+        U, S, Vt = randomized_svd(w, 3, random_state=0)
+        sRF = Vt[0].reshape(*dims_sRF)
+        tRF = U[:, 0]
+        #change the sign of sRF and tRF to map with 3d RFs, which is unpredicable in SVD
+        peaks, _ = find_peaks(np.abs(tRF)) #peak index
+        peak_close2t0=peaks[-1] #peak index close to time point 0
+        w_old_peak_blur=cv2.GaussianBlur(w_old[peak_close2t0],(3,3),0)
+        sRF_blur=cv2.GaussianBlur(sRF,(3,3),0)
+        #sRF, same polarity and magnitude as w_ol
+        tempcc,_=pearsonr(sRF_blur.flatten(), w_old_peak_blur.flatten())
+        if tempcc<0:
+            sRF = -1 * sRF
+        tempscale=np.max(np.abs(w_old_peak_blur))/np.max(np.abs(sRF_blur))
+        sRF = tempscale *sRF
+        if tempcc<0:
+            tRF = -1 * tRF
+    else:
+        sRF = w
+        tRF = None
+    return [sRF, tRF]
+    
