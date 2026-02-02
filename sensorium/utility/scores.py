@@ -869,3 +869,48 @@ def mySVD(w):
         tRF = None
     return [sRF, tRF]
     
+def generate_2d_binned_average(
+    coordinates,
+    values,
+    bin_size,
+    xlim=None,
+    ylim=None,
+):
+    """
+    Generate a 2D heatmap by binning coordinates and averaging values in each bin.
+
+    Args:
+        coordinates: np.ndarray, shape (N, 2)
+        values: np.ndarray, shape (N,)
+        bin_size: float or tuple (bin_x, bin_y)
+        xlim, ylim: optional (min, max) for axes
+    """
+
+    assert coordinates.shape[1] == 2
+    assert coordinates.shape[0] == values.shape[0]
+    if isinstance(bin_size, (int, float)):
+        bin_size = (bin_size, bin_size)
+
+    x = coordinates[:, 0]
+    y = coordinates[:, 1]
+    if xlim is None:
+        xlim = (x.min(), x.max())
+    if ylim is None:
+        ylim = (y.min(), y.max())
+
+    # Define bin edges
+    x_edges = np.arange(xlim[0], xlim[1] + bin_size[0], bin_size[0])
+    y_edges = np.arange(ylim[0], ylim[1] + bin_size[1], bin_size[1])
+    # Accumulate sums and counts
+    sum_grid, _, _ = np.histogram2d(
+        x, y, bins=[x_edges, y_edges], weights=values
+    )
+    count_grid, _, _ = np.histogram2d(
+        x, y, bins=[x_edges, y_edges]
+    )
+    # Compute average (avoid division by zero)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        avg_grid = sum_grid / count_grid
+        avg_grid[count_grid == 0] = np.nan
+        
+    return avg_grid
