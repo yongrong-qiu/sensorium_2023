@@ -52,7 +52,51 @@ def get_dims_for_loader_dict(dataloaders, deeplake_ds):
     return {k: get_io_dims(v, deeplake_ds) for k, v in dataloaders.items()}
 
 
-def prepare_grid(grid_mean_predictor, dataloaders, deeplake_ds):
+# def prepare_grid(grid_mean_predictor, dataloaders, deeplake_ds):
+#     """
+#     Utility function for using the neurons cortical coordinates
+#     to guide the readout locations in image space.
+#     Args:
+#         grid_mean_predictor (dict): config dictionary, for example:
+#           {'type': 'cortex',
+#            'input_dimensions': 2,
+#            'hidden_layers': 1,
+#            'hidden_features': 30,
+#            'final_tanh': True}
+#         dataloaders: a dictionary of dataloaders, one PyTorch DataLoader per session
+#             in the format {'data_key': dataloader object, .. }
+#     Returns:
+#         grid_mean_predictor (dict): config dictionary
+#         grid_mean_predictor_type (str): type of the information that is being used for
+#             the grid positition estimator
+#         source_grids (dict): a grid of points for each data_key
+#     """
+#     if grid_mean_predictor is None:
+#         grid_mean_predictor_type = None
+#         source_grids = None
+#     else:
+#         grid_mean_predictor = copy.deepcopy(grid_mean_predictor)
+#         grid_mean_predictor_type = grid_mean_predictor.pop("type")
+
+#         if grid_mean_predictor_type == "cortex":
+#             input_dim = grid_mean_predictor.pop("input_dimensions", 2)
+#             if deeplake_ds:
+#                 import deeplake
+
+#                 source_grids = {
+#                     k: deeplake.load(f"hub://sinzlab/Sensorium_2023_{k}_train").info[
+#                         "cell_motor_coordinates"
+#                     ][:, :input_dim]
+#                     for k, _ in dataloaders.items()
+#                 }
+#             else:
+#                 source_grids = {
+#                     k: v.dataset.neurons.cell_motor_coordinates[:, :input_dim]
+#                     for k, v in dataloaders.items()
+#                 }
+#     return grid_mean_predictor, grid_mean_predictor_type, source_grids
+
+def prepare_grid(grid_mean_predictor, data_meta_dict, deeplake_ds):
     """
     Utility function for using the neurons cortical coordinates
     to guide the readout locations in image space.
@@ -83,15 +127,12 @@ def prepare_grid(grid_mean_predictor, dataloaders, deeplake_ds):
             if deeplake_ds:
                 import deeplake
 
-                source_grids = {
-                    k: deeplake.load(f"hub://sinzlab/Sensorium_2023_{k}_train").info[
-                        "cell_motor_coordinates"
-                    ][:, :input_dim]
-                    for k, _ in dataloaders.items()
-                }
+                # source_grids = {
+                #     k: deeplake.load(f"hub://sinzlab/Sensorium_2023_{k}_train").info[
+                #         "cell_motor_coordinates"
+                #     ][:, :input_dim]
+                #     for k, _ in dataloaders.items()
+                # }
             else:
-                source_grids = {
-                    k: v.dataset.neurons.cell_motor_coordinates[:, :input_dim]
-                    for k, v in dataloaders.items()
-                }
+                source_grids = data_meta_dict['source_grids']
     return grid_mean_predictor, grid_mean_predictor_type, source_grids

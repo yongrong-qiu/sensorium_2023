@@ -17,7 +17,8 @@ from .video_encoder import VideoFiringRateEncoder
 
 
 def make_video_model(
-    dataloaders,
+    data_meta_dict,
+    # dataloaders,
     seed,
     core_dict,
     core_type,
@@ -60,16 +61,18 @@ def make_video_model(
     Returns: An initialized model which consists of model.core and model.readout
     """
 
-    if "train" in dataloaders.keys():
-        dataloaders = dataloaders["train"]
+    # if "train" in dataloaders.keys():
+    #     dataloaders = dataloaders["train"]
 
     # Obtain the named tuple fields from the first entry of the first dataloader in the dictionary
-    batch = next(iter(list(dataloaders.values())[0]))
-    in_name, out_name = (
-        list(batch.keys())[:2] if isinstance(batch, dict) else batch._fields[:2]
-    )
+    # batch = next(iter(list(dataloaders.values())[0]))
+    # in_name, out_name = (
+    #     list(batch.keys())[:2] if isinstance(batch, dict) else batch._fields[:2]
+    # )
+    in_name, out_name = data_meta_dict['in_name'], data_meta_dict['out_name']
 
-    session_shape_dict = get_dims_for_loader_dict(dataloaders, deeplake_ds)
+    # session_shape_dict = get_dims_for_loader_dict(dataloaders, deeplake_ds)
+    session_shape_dict = data_meta_dict['session_shape_dict']
     n_neurons_dict = {k: v[out_name][1] for k, v in session_shape_dict.items()}
     input_channels = [v[in_name][1] for v in session_shape_dict.values()]
 
@@ -140,14 +143,16 @@ def make_video_model(
             for k in dataloaders.keys()
         }
     else:
-        mean_activity_dict = {
-            k: next(iter(dataloaders[k]))[1].mean(0).mean(-1)
-            for k in dataloaders.keys()
-        }
+        # mean_activity_dict = {
+        #     k: next(iter(dataloaders[k]))[1].mean(0).mean(-1)
+        #     for k in dataloaders.keys()
+        # }
+        mean_activity_dict = data_meta_dict['mean_activity_dict']
 
     readout_dict["in_shape_dict"] = in_shapes_dict
     readout_dict["n_neurons_dict"] = n_neurons_dict
-    readout_dict["loaders"] = dataloaders
+    # readout_dict["loaders"] = dataloaders
+    readout_dict["loaders"] = data_meta_dict
 
     if feature_latent_flag:
         channel_num = list(in_shapes_dict.values())[0][0]
@@ -175,8 +180,11 @@ def make_video_model(
             )
 
     if readout_type == "gaussian":
+        # grid_mean_predictor, grid_mean_predictor_type, source_grids = prepare_grid(
+        #     readout_dict["grid_mean_predictor"], dataloaders, deeplake_ds
+        # )
         grid_mean_predictor, grid_mean_predictor_type, source_grids = prepare_grid(
-            readout_dict["grid_mean_predictor"], dataloaders, deeplake_ds
+            readout_dict["grid_mean_predictor"], data_meta_dict, deeplake_ds
         )
 
         readout_dict["mean_activity_dict"] = mean_activity_dict
@@ -215,7 +223,8 @@ def make_video_model(
 
     shifter = None
     if use_shifter:
-        data_keys = [i for i in dataloaders.keys()]
+        # data_keys = [i for i in dataloaders.keys()]
+        data_keys = data_meta_dict['data_keys']
         shifter_dict["data_keys"] = data_keys
         if shifter_type == "MLP":
             shifter = MLPShifter(**shifter_dict)
