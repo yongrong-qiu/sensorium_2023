@@ -3,7 +3,7 @@ import warnings
 import numpy as np
 from scipy import stats
 import torch
-from neuralpredictors.measures.np_functions import corr
+from neuralpredictors.measures.np_functions import corr, fev
 from neuralpredictors.training import device_state
 from nnfabrik.builder import get_data
 import operator
@@ -347,6 +347,126 @@ def get_signal_correlations(
         mean_corrs = mean_corrs_
 
     return evaluation_hashes_unique, single_trial_corrs, mean_corrs
+
+
+def get_signal_feve(
+    model,
+    dataloaders,
+    tier,
+    stimulus_type=None,
+    evaluation_hashes_unique=None,
+    device="cpu",
+    datakeys=None, # a list of data keys
+    as_dict=False,
+    per_neuron=True,
+    pad_responses=False,
+):
+    """
+    Similar as `get_signal_correlations`, but instead of computing the correlation with `corr()`,
+    this uses `fev()` to compute the fraction of explainable variance explained (FEVe) per neuron.
+    `fev()` needs, for each "image" (i.e. one stimulus presentation), an array of the repeated
+    responses/predictions with shape (num_repeats, num_neurons). Here, each condition_hash
+    corresponds to a repeated video trial, so every individual time frame of that trial is treated
+    as one such "image", with its associated repeats being the repeated presentations of that
+    condition_hash.
+    For the test loaders, we may have different stimulus_types, such as clip and dotsequence,
+    we may compute the FEVe for some specific stimulus_type.
+
+    Args:
+        dataloaders (obj): PyTorch Dataloaders, without tier
+        tier (str):
+        stimulus_type (str): such as "clip" and "dotsequence"
+        evaluation_hashes_unique: 1D array, unique condition_hash for evaluation
+
+    Returns:
+        evaluation_hashes_unique
+        feve
+    """
+    feve = {}
+    for data_key, dataloader in dataloaders[tier].items():
+        if datakeys is None or data_key in datakeys:
+            tier_hashes, evaluation_hashes_unique_temp = get_data_filetree_loader(
+                dataloader=dataloader, tier=tier, stimulus_type=stimulus_type
+            )
+            if evaluation_hashes_unique is None:
+                evaluation_hashes_unique = evaluation_hashes_unique_temp
+
+            responses, predictions = model_predictions(
+                model, dataloader, data_key=data_key, device=device, pad_responses=pad_responses,
+            )
+            responses_align = [
+                operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(responses)
+                for temp in evaluation_hashes_unique
+            ]
+            predictions_align = [
+                operator.itemgetter(*(np.where(tier_hashes == temp)[0]))(predictions)
+                for temp in evaluation_hashes_unique
+            ]
+
+            # in some cases, each repeat may be presented with distinct time frames (1_frame or 2_frame difference)
+            for num in range(len(responses_align)):
+                frames_per_repeat = np.array([ii.shape[1] for ii in responses_align[num]])
+                if (
+                    len(np.unique(frames_per_repeat)) > 1
+                ):  # number of time frames for each repeat are different
+                    print(
+                        f"Warning: responses_align[{num}] have multiple time frames for repeats: {frames_per_repeat}"
+                    )
+                    responses_align[num] = [
+                        ii[:, -np.min(frames_per_repeat) :] for ii in responses_align[num]
+                    ]
+                    predictions_align[num] = [
+                        ii[:, -np.min(frames_per_repeat) :] for ii in predictions_align[num]
+                    ]
+
+            responses_align = [
+                np.transpose(np.array(temp), (0, 2, 1)) for temp in responses_align
+            ]
+            # responses_align: a list of arrays, one array per condition_hash, each array of shape
+            # (num_of_repeats_for_that_hash, num_of_frames_for_that_trial, num_of_neurons)
+            predictions_align = [
+                np.transpose(np.array(temp), (0, 2, 1)) for temp in predictions_align
+            ]
+
+            # fev() expects a list where each element corresponds to one "image" and has shape
+            # (num_repeats, num_neurons). We build this by moving the frame axis to the front for
+            # each condition_hash's (repeats, frames, neurons) array, so that every individual
+            # frame becomes its own list entry of shape (num_repeats, num_neurons), then we
+            # concatenate these frame-lists across all condition_hashes into one flat list.
+            targets_per_frame = []
+            predictions_per_frame = []
+            for resp_arr, pred_arr in zip(responses_align, predictions_align):
+                # resp_arr / pred_arr shape: (num_repeats, num_frames, num_neurons)
+                resp_arr = np.transpose(resp_arr, (1, 0, 2))  # -> (num_frames, num_repeats, num_neurons)
+                pred_arr = np.transpose(pred_arr, (1, 0, 2))  # -> (num_frames, num_repeats, num_neurons)
+                # list(...) splits along axis 0 (num_frames), giving one (num_repeats, num_neurons)
+                # array per frame, which is exactly the per-"image" shape fev() expects
+                targets_per_frame.extend(list(resp_arr))
+                predictions_per_frame.extend(list(pred_arr))
+
+            # fev_e: fraction of explainable variance explained, shape: (num_neurons,)
+            feve[data_key] = fev(targets_per_frame, predictions_per_frame, return_exp_var=False)
+            del targets_per_frame, predictions_per_frame
+        else:
+            pass
+
+    if not as_dict:
+        feve = (
+            np.hstack([v for v in feve.values()])
+            if per_neuron
+            else np.mean(np.hstack([v for v in feve.values()]))
+        )
+    elif not per_neuron:
+        feve_ = {}
+        for k in feve.keys():
+            feve_[k] = (
+                np.hstack([v for v in feve[k]])
+                if per_neuron
+                else np.mean(np.hstack([v for v in feve[k]]))
+            )
+        feve = feve_
+
+    return evaluation_hashes_unique, feve
 
 
 def model_predictions_align(
